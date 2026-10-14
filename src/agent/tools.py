@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.costing.quote import QuoteRequest, build_quote, compare_modes
+from src.costing.road_routing import main_roads, with_road_route
 from src.costing.routing import Priorities, recommend
 from src.delays.model import DelayInput, get_delay_model
 from src.forecasting.esg_calculator import TransportMode, calculate_emissions
@@ -88,11 +89,20 @@ def forecast_container_volume(commodity: str, horizon_days: int = 14) -> dict[st
 
 
 def quote_container_job(**kwargs: Any) -> dict[str, Any]:
-    return build_quote(QuoteRequest(**kwargs)).model_dump(mode="json")
+    req, route = with_road_route(QuoteRequest(**kwargs))
+    out = build_quote(req).model_dump(mode="json")
+    if route is not None:
+        out["road_route"] = {
+            "distance_km": route.distance_km,
+            "drive_hours": route.drive_hours,
+            "main_roads": main_roads(route),
+        }
+    return out
 
 
 def compare_transport_modes(**kwargs: Any) -> dict[str, Any]:
-    return compare_modes(QuoteRequest(**kwargs)).model_dump(mode="json")
+    req, _ = with_road_route(QuoteRequest(**kwargs))
+    return compare_modes(req).model_dump(mode="json")
 
 
 def estimate_haulage_spend(

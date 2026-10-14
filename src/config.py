@@ -47,6 +47,10 @@ class Settings:
         default_factory=lambda: _env("OLLAMA_BASE_URL", "http://localhost:11434")
     )
 
+    # External data (both optional; the app falls back to offline estimates)
+    ors_api_key: str = field(default_factory=lambda: _env("ORS_API_KEY"))
+    weather_enabled: bool = field(default_factory=lambda: _env_bool("WEATHER_ENABLED", True))
+
     # Storage
     database_url: str = field(default_factory=lambda: _env("DATABASE_URL"))
     redis_url: str = field(default_factory=lambda: _env("REDIS_URL"))

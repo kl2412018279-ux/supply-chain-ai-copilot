@@ -70,3 +70,31 @@ def test_new_pages_render(app):
     app.switch_page("views/hauliers.py").run()
     assert not app.exception
     assert any(m.label == "Grade" for m in app.metric)
+
+
+def test_quote_route_view_with_road_route(app, monkeypatch):
+    from src.costing import road_routing
+    from tests.test_live_data import ORS_SAMPLE
+
+    def pick_route_view():
+        app.switch_page("views/quote.py").run()
+        view = next(b for b in app.button_group if "Route" in b.options)
+        view.set_value("Route").run()
+        assert not app.exception
+
+    pick_route_view()  # no ORS key: straight line plus setup hint
+    assert any("ORS_API_KEY" in c.value for c in app.caption)
+
+    route = road_routing.parse_ors_geojson(ORS_SAMPLE)
+    monkeypatch.setattr(road_routing, "road_route", lambda *a, **k: route)
+    pick_route_view()
+    assert any("OpenRouteService" in c.value for c in app.caption)
+    assert any("Turn-by-turn" in e.label for e in app.expander)
+
+
+def test_delay_page_shows_and_overrides_rain(app):
+    app.switch_page("views/delays.py").run()
+    assert any("Rain at" in c.value and "offline" in c.value for c in app.caption)
+    next(t for t in app.toggle if t.label == "Set rainfall manually").set_value(True).run()
+    assert not app.exception
+    assert any("entered by user" in c.value for c in app.caption)
