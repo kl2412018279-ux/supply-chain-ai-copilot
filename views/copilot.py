@@ -25,7 +25,7 @@ with head:
         "(rate card, forecast model, operations manual), never from the model's memory.",
     )
 with action:
-    if history and st.button("Clear chat", icon=":material/delete:", use_container_width=True):
+    if history and st.button("Clear chat", icon=":material/delete:", width="stretch"):
         history.clear()
         st.rerun()
 
@@ -61,7 +61,7 @@ if not history and prompt is None:
     st.markdown("##### Try one of these")
     cols = st.columns(2)
     for i, text in enumerate(SUGGESTIONS):
-        if cols[i % 2].button(text, key=f"s{i}", use_container_width=True):
+        if cols[i % 2].button(text, key=f"s{i}", width="stretch"):
             st.session_state["pending_prompt"] = text
             st.rerun()
 

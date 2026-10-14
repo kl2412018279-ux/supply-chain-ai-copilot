@@ -10,7 +10,7 @@ from src.guardrails.validators import GuardrailCategory
 
 
 @pytest.fixture
-def agent(trained_model, ingested_store):
+def agent(trained_model, ingested_store, delay_model):
     return RuleBasedAgent()
 
 
@@ -80,6 +80,32 @@ def test_procedure_question_searches_manual_and_cites_sources(agent):
     assert _tool_names(out) == ["search_operations_documents"]
     assert out.sources and out.sources[0].source == "operations_manual.pdf"
     assert "55 degrees" in out.answer and "operations_manual.pdf" in out.answer
+
+
+def test_routes_carrier_recommendation_with_priorities(agent):
+    out = agent.run("Which carrier is best for chemicals to Penang? Cheapest please")
+    assert _tool_names(out) == ["recommend_route_and_carrier"]
+    args = out.tool_calls[0].arguments
+    assert args["priority_cost"] == 1.0 and args["priority_speed"] == 0.15
+    assert out.tool_calls[0].output["recommended"]["carrier"] == "raillink"
+    assert "Recommended: RailLink Intermodal" in out.answer
+
+
+def test_routes_delay_question(agent):
+    out = agent.run("Will a chemicals shipment to Kuching in December be delayed?")
+    assert _tool_names(out) == ["predict_delay_risk"]
+    args = out.tool_calls[0].arguments
+    assert args["carrier"] == "nusantara" and args["eta"].endswith("-12-15")
+    assert "Delay risk: High" in out.answer and "monsoon" in out.answer
+
+
+def test_routes_scorecard_questions(agent):
+    ranking = agent.run("Show the haulier scorecard")
+    assert _tool_names(ranking) == ["get_haulier_scorecard"]
+    assert "1. Hijau Transport" in ranking.answer
+    one = agent.run("How does Cempaka score on ESG?")
+    assert one.tool_calls[0].arguments["haulier"] == "cempaka"
+    assert "grade D" in one.answer
 
 
 def test_tool_errors_are_returned_not_raised(trained_model):

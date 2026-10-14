@@ -17,6 +17,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.costing.quote import QuoteRequest, build_quote, compare_modes
+from src.costing.routing import Priorities, recommend
+from src.delays.model import DelayInput, get_delay_model
 from src.forecasting.esg_calculator import TransportMode, calculate_emissions
 from src.forecasting.predict import MAX_HORIZON_DAYS, get_forecaster
 from src.forecasting.volume_repository import get_volume_repository
@@ -34,6 +36,19 @@ class ForecastArgs(BaseModel):
 class SpendArgs(ForecastArgs):
     destination: str = Field(default="Shah Alam", description="Typical delivery point.")
     container_size: str = Field(default="20", description="'20' or '40' (feet).")
+
+
+class RouteArgs(QuoteRequest):
+    priority_cost: float = Field(default=0.4, ge=0, description="Weight for low price")
+    priority_speed: float = Field(default=0.2, ge=0, description="Weight for short transit")
+    priority_co2: float = Field(default=0.2, ge=0, description="Weight for low emissions")
+    priority_reliability: float = Field(default=0.2, ge=0, description="Weight for on-time history")
+
+
+class ScorecardArgs(BaseModel):
+    haulier: str | None = Field(
+        default=None, description="Optional carrier key or name; omit to rank all hauliers."
+    )
 
 
 class EmissionArgs(BaseModel):
@@ -113,6 +128,38 @@ def estimate_haulage_spend(
     }
 
 
+def recommend_route_and_carrier(**kwargs: Any) -> dict[str, Any]:
+    weights = {k: kwargs.pop(f"priority_{k}") for k in ("cost", "speed", "co2", "reliability")}
+    rec = recommend(QuoteRequest(**kwargs), Priorities(**weights))
+    out = rec.model_dump(mode="json")
+    out["options"] = out["options"][:5]
+    return out
+
+
+def predict_delay_risk(**kwargs: Any) -> dict[str, Any]:
+    return get_delay_model().predict(DelayInput(**kwargs)).model_dump(mode="json")
+
+
+def get_haulier_scorecard(haulier: str | None = None) -> dict[str, Any] | list[dict[str, Any]]:
+    from src.hauliers.scorecard import build_scorecard  # noqa: PLC0415
+
+    scores = build_scorecard()
+    if haulier:
+        needle = haulier.strip().lower()
+        match = [
+            s for s in scores if needle in (s.haulier, s.label.lower()) or needle in s.label.lower()
+        ]
+        if not match:
+            raise KeyError(
+                f"Unknown haulier '{haulier}'. Known: {', '.join(s.label for s in scores)}"
+            )
+        return match[0].model_dump(mode="json")
+    return [
+        s.model_dump(mode="json", include={"rank", "haulier", "label", "grade", "score", "summary"})
+        for s in scores
+    ]
+
+
 def calculate_shipping_emissions(
     distance_km: float, weight_kg: float, mode: str = "truck"
 ) -> dict[str, Any]:
@@ -159,6 +206,29 @@ TOOL_SPECS: list[ToolSpec] = [
         "with RM price, CO2e, and the RM cost per tonne of CO2e avoided.",
         compare_transport_modes,
         QuoteRequest,
+    ),
+    ToolSpec(
+        "recommend_route_and_carrier",
+        "Recommend the best transport mode AND carrier for a job by balancing price (RM), "
+        "transit days, CO2e and historical on-time rate with priority weights; explains the "
+        "trade-off versus the fastest/cheapest alternative.",
+        recommend_route_and_carrier,
+        RouteArgs,
+    ),
+    ToolSpec(
+        "predict_delay_risk",
+        "Predict delay risk (Low/Medium/High) for a shipment from destination, carrier, "
+        "commodity, ETA date, port congestion and customs inspection; returns probabilities, "
+        "the main risk drivers and expected demurrage exposure in RM.",
+        predict_delay_risk,
+        DelayInput,
+    ),
+    ToolSpec(
+        "get_haulier_scorecard",
+        "Haulier / carrier performance and ESG scorecard: on-time rate, damage rate, claims, "
+        "ESG evidence from their policy documents, composite grade (A-D) and ranking.",
+        get_haulier_scorecard,
+        ScorecardArgs,
     ),
     ToolSpec(
         "forecast_container_volume",

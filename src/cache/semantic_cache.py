@@ -53,7 +53,21 @@ def _entity_vocabulary() -> dict[str, str]:
     for alias, commodity in COMMODITY_ALIASES.items():
         if " " not in alias:
             vocab[alias] = f"cargo:{commodity}"
-    for word in ("truck", "rail", "sea", "air", "westport", "northport"):
+    try:
+        for key, carrier in get_rate_card().data["carriers"].items():
+            if key.startswith("_"):
+                continue
+            for word in _WORD_RE.findall(carrier["label"].lower()):
+                if word not in {"transport", "haulage", "shipping", "line", "own", "fleet"}:
+                    vocab.setdefault(word, f"carrier:{key}")
+    except (OSError, KeyError, ValueError):
+        pass
+    months = ["january", "february", "march", "april", "may", "june", "july", "august",
+              "september", "october", "november", "december"]  # fmt: skip
+    for i, month in enumerate(months, start=1):
+        vocab[month] = f"month:{i}"
+    for word in ("truck", "rail", "sea", "air", "westport", "northport", "inspection",
+                 "cheapest", "fastest", "greenest", "reliable"):  # fmt: skip
         vocab[word] = word
     for generic in ("oil", "port", "the", "goods"):  # too ambiguous on their own
         vocab.pop(generic, None)
