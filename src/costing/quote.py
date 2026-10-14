@@ -9,8 +9,9 @@ A quote is built bottom-up from the rate card:
 * **Warehousing** - storage per pallet-day plus handling.
 * **Margin** on top of cost gives the quoted price.
 
-CO2e is computed from the *same* diesel litres (2.68 kg CO2/L), so cost and
-emissions always move together. Rail and coastal-sea options use tonne-km factors.
+Diesel litres are reported alongside the price so fuel exposure is visible.
+:func:`compare_modes` sets every offered mode side by side with its door-to-door
+transit days, so the trade-off is plain: how much extra per day saved.
 """
 
 from __future__ import annotations
@@ -90,18 +91,18 @@ class Quote(BaseModel):
     price_per_container_rm: float
     cost_per_teu_rm: float
     diesel_litres: float
-    co2e_kg: float
     warnings: list[str] = Field(default_factory=list)
 
 
 class QuoteComparison(BaseModel):
     quotes: list[Quote]
     cheapest_mode: Mode
-    lowest_co2_mode: Mode
-    carbon_abatement_rm_per_tonne: float | None = Field(
+    fastest_mode: Mode
+    transit_days: dict[str, int] = Field(description="Door-to-door transit days per mode.")
+    premium_rm_per_day_saved: float | None = Field(
         default=None,
-        description="Extra RM paid per tonne of CO2e avoided by choosing the lowest-CO2 mode "
-        "over the cheapest one; None when the lowest-CO2 mode is also the cheapest.",
+        description="Extra RM paid per transit day saved by choosing the fastest mode over the "
+        "cheapest one; None when the cheapest mode is also the fastest.",
     )
 
 
@@ -151,7 +152,6 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
             )
 
     peninsular_diesel = rates.value("fuel", "diesel_rm_per_litre_peninsular")
-    co2_per_litre = rates.value("fuel", "kg_co2_per_litre_diesel")
     l_loaded = rates.value("fuel", "litres_per_km_loaded")
     l_empty = rates.value("fuel", "litres_per_km_empty")
     speed = rates.value("truck", "avg_speed_kmh")
@@ -185,11 +185,9 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
         return litres, hours
 
     litres = 0.0
-    co2 = 0.0
     if mode is Mode.truck:
         litres, _ = truck_leg(km, "Haulage")
         add("tolls", f"Tolls (round trip, {n} x)", 2 * dest["toll_rm"] * n)
-        co2 = litres * co2_per_litre
     elif mode is Mode.rail:
         first_last = rates.data["rail"]["first_last_mile_km"]
         litres, _ = truck_leg(first_last, "First/last-mile truck")
@@ -198,10 +196,6 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
             "linehaul",
             f"Rail linehaul {rail_km:,.0f} km x {n}",
             rail_km * rates.data["rail"]["rm_per_container_km"][req.container_size] * n,
-        )
-        co2 = (
-            litres * co2_per_litre
-            + gross_kg / 1000 * rail_km * rates.data["rail"]["kg_co2e_per_tonne_km"] * n
         )
     else:  # sea to East Malaysia
         add(
@@ -214,7 +208,6 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
             f"Destination port handling ({req.container_size}ft x {n})",
             box["port_handling_rm"] * n,
         )
-        co2 = gross_kg / 1000 * km * rates.data["sea"]["kg_co2e_per_tonne_km"] * n
         warnings.append(
             "Port-to-port only: delivery inside East Malaysia is quoted separately "
             "(local diesel is priced differently)."
@@ -275,25 +268,32 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
         price_per_container_rm=_round(price / n),
         cost_per_teu_rm=_round(cost / (n * box["teu"])),
         diesel_litres=round(litres, 1),
-        co2e_kg=round(co2, 1),
         warnings=warnings,
     )
 
 
 def compare_modes(req: QuoteRequest, rates: RateCard | None = None) -> QuoteComparison:
-    """Quote every transport mode offered to the destination, with the CO2 trade-off."""
+    """Quote every transport mode offered to the destination, with the price/speed trade-off."""
+    from src.costing.routing import transit_days  # noqa: PLC0415 (routing imports this module)
+
     rates = rates or get_rate_card()
-    dest = rates.destinations[rates.resolve_destination(req.destination)]
+    dest_key = rates.resolve_destination(req.destination)
+    dest = rates.destinations[dest_key]
     quotes = [build_quote(req.model_copy(update={"mode": Mode(m)}), rates) for m in dest["modes"]]
+    days = {
+        q.mode.value: transit_days(rates, dest_key, q.mode, {}, req.road_drive_hours)
+        for q in quotes
+    }
     cheapest = min(quotes, key=lambda q: q.price_rm)
-    greenest = min(quotes, key=lambda q: q.co2e_kg)
-    abatement = None
-    saved_t = (cheapest.co2e_kg - greenest.co2e_kg) / 1000
-    if greenest is not cheapest and saved_t > 0:
-        abatement = round((greenest.price_rm - cheapest.price_rm) / saved_t, 2)
+    fastest = min(quotes, key=lambda q: (days[q.mode.value], q.price_rm))
+    premium = None
+    saved = days[cheapest.mode.value] - days[fastest.mode.value]
+    if fastest is not cheapest and saved > 0:
+        premium = round((fastest.price_rm - cheapest.price_rm) / saved, 2)
     return QuoteComparison(
         quotes=quotes,
         cheapest_mode=cheapest.mode,
-        lowest_co2_mode=greenest.mode,
-        carbon_abatement_rm_per_tonne=abatement,
+        fastest_mode=fastest.mode,
+        transit_days=days,
+        premium_rm_per_day_saved=premium,
     )
