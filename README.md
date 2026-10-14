@@ -196,7 +196,13 @@ LangSmith: set `LANGSMITH_API_KEY` (free developer tier) and every agent run is 
 
 ## Deploying the demo for free
 
-- **Streamlit Community Cloud.** Point it at `app.py`. It runs in-process with no DB or Redis needed. Add `GROQ_API_KEY` under *Secrets*. Set `EMBEDDING_BACKEND=hashing` if you hit memory limits.
+- **Streamlit Community Cloud.** Create an app from this repo with main file `app.py` (Python 3.11 or 3.12). It runs in-process, with no DB or Redis needed: on first start it trains the model and indexes `data/raw/`. `packages.txt` installs LightGBM's OpenMP runtime. Paste this under *Advanced settings → Secrets*:
+
+  ```toml
+  GROQ_API_KEY = "gsk_..."
+  EMBEDDING_BACKEND = "hashing"   # keeps memory under the free 1 GB limit
+  RERANKER_BACKEND = "lexical"
+  ```
 - **Hugging Face Spaces.** Use a Docker Space with this `Dockerfile` and the command `streamlit run app.py --server.port 7860 --server.address 0.0.0.0`.
 - **Supabase** (free Postgres with pgvector). Set `DATABASE_URL` to its connection string.
 
