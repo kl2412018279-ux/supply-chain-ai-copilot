@@ -3,6 +3,7 @@ can update diesel prices or contract rates without touching code."""
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from functools import lru_cache
@@ -20,6 +21,23 @@ class RateCard:
     def load(cls, path: str | Path | None = None) -> RateCard:
         path = Path(path or get_settings().rates_path)
         return cls(json.loads(path.read_text(encoding="utf-8")))
+
+    def with_overrides(
+        self, diesel_rm_per_litre: float | None = None, margin_pct: float | None = None
+    ) -> RateCard:
+        """A what-if copy of the rate card (the original is left untouched)."""
+        data = copy.deepcopy(self.data)
+        if diesel_rm_per_litre is not None:
+            data["fuel"]["diesel_rm_per_litre_peninsular"]["value"] = float(diesel_rm_per_litre)
+        if margin_pct is not None:
+            data["margin_pct"] = float(margin_pct)
+        return RateCard(data)
+
+    def trip_hours(self, destination: str) -> float:
+        """Round-trip hours for one truck job to ``destination`` (drive + port turnaround)."""
+        dest = self.destinations[self.resolve_destination(destination)]
+        drive = 2 * dest["km"] / self.value("truck", "avg_speed_kmh")
+        return drive + self.value("truck", "port_turnaround_hours")
 
     def value(self, section: str, key: str) -> float:
         entry = self.data[section][key]
