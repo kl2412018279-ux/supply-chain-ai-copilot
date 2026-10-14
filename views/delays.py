@@ -102,6 +102,12 @@ with check:
         congestion = st.slider("Berth occupancy", 0.40, 0.99, 0.78, 0.01, format="%.2f")
         inspection = st.toggle("Selected for customs inspection")
         containers = st.number_input("Containers", 1, 50, 1)
+        rain_override = st.toggle(
+            "Set rainfall manually",
+            help="By default the model looks up rain at the destination on the ETA "
+            "(Open-Meteo forecast, or the archive for past and far-off dates).",
+        )
+        rain = st.slider("Rain on ETA day (mm)", 0, 150, 20) if rain_override else None
 
     pred = model.predict(
         DelayInput(
@@ -113,6 +119,7 @@ with check:
             congestion=congestion,
             customs_inspection=inspection,
             containers=int(containers),
+            rain_mm=rain,
         )
     )
 
@@ -124,6 +131,11 @@ with check:
             "Demurrage exposure",
             rm(pred.demurrage_exposure_rm, 0),
             help="Expected port days beyond the free time × demurrage rate (rate card).",
+        )
+
+        st.caption(
+            f":material/rainy: Rain at {dests[dest]['label']} on {pred.weather.date}: "
+            f"**{pred.weather.rain_mm:.0f} mm** ({pred.weather.source})"
         )
 
         fig = go.Figure()

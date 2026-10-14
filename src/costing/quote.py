@@ -41,6 +41,12 @@ class QuoteRequest(BaseModel):
     origin: str = Field(default="westport", description="'westport' or 'northport'.")
     mode: Mode | None = Field(default=None, description="truck, rail or sea; default picks best.")
     customs_clearance: bool = True
+    road_distance_km: float | None = Field(
+        default=None, gt=0, description="Real one-way road distance (e.g. from a routing API)."
+    )
+    road_drive_hours: float | None = Field(
+        default=None, gt=0, description="Real one-way drive time in hours (routing API)."
+    )
     warehouse_pallets: int = Field(default=0, ge=0, le=5000)
     warehouse_days: int = Field(default=0, ge=0, le=365)
 
@@ -75,6 +81,7 @@ class Quote(BaseModel):
     containers: int
     cargo_type: str
     distance_km: float
+    distance_source: str = "rate-card estimate"
     line_items: list[LineItem]
     cost_rm: float
     margin_pct: float
@@ -121,6 +128,11 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
     box = rates.container(req.container_size)
     cargo = rates.cargo_types[req.cargo_type]
     km = max(dest["km"] + origin["km_offset"], 5)
+    distance_source = "rate-card estimate"
+    one_way_drive_h: float | None = None
+    if mode is Mode.truck and req.road_distance_km:
+        km, distance_source = req.road_distance_km, "road route (OpenRouteService)"
+        one_way_drive_h = req.road_drive_hours
     gross_kg = req.cargo_weight_kg + box["tare_kg"]
     warnings: list[str] = []
     max_gross = rates.value("truck", "max_gross_weight_kg")
@@ -147,7 +159,8 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
     def truck_leg(leg_km: float, label: str) -> tuple[float, float]:
         """Round-trip trucking cost lines for ``leg_km`` one way; returns (litres, hours)."""
         litres = leg_km * (l_loaded + l_empty) * n
-        hours = (2 * leg_km / speed + rates.value("truck", "port_turnaround_hours")) * n
+        drive = 2 * one_way_drive_h if one_way_drive_h and leg_km == km else 2 * leg_km / speed
+        hours = (drive + rates.value("truck", "port_turnaround_hours")) * n
         add(
             "fuel",
             f"{label}: diesel {litres:,.0f} L @ RM{peninsular_diesel:.2f}/L",
@@ -253,6 +266,7 @@ def build_quote(req: QuoteRequest, rates: RateCard | None = None) -> Quote:
         containers=n,
         cargo_type=req.cargo_type,
         distance_km=km,
+        distance_source=distance_source,
         line_items=items,
         cost_rm=_round(cost),
         margin_pct=margin_pct,

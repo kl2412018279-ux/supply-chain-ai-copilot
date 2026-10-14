@@ -41,6 +41,7 @@ from src.delays.data import (
     congestion_series,
     generate_shipments,
 )
+from src.delays.weather import WeatherReading, get_rain
 from src.forecasting.data import _days_to_nearest_holiday
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,9 @@ class DelayInput(BaseModel):
         default=None, ge=0, le=1, description="Berth occupancy 0-1; default: typical for date."
     )
     customs_inspection: bool = False
+    rain_mm: float | None = Field(
+        default=None, ge=0, le=500, description="Rain at destination on ETA; default: live weather."
+    )
     containers: int = Field(default=1, ge=1, le=100)
     container_size: str = Field(default="40")
 
@@ -74,6 +78,7 @@ class Driver(BaseModel):
 
 
 class DelayPrediction(BaseModel):
+    weather: WeatherReading
     destination_label: str
     carrier_label: str
     risk: str
@@ -140,6 +145,7 @@ def train(
     class_delay = df.groupby("risk")["delay_hours"].mean().round(1).to_dict()
     bundle = {
         "model": final,
+        "features": list(FEATURES),
         "metrics": metrics,
         "baselines": baselines,
         "confusion_matrix": {"labels": RISK_LABELS, "matrix": cm},
@@ -184,6 +190,9 @@ class DelayModel:
         return p @ np.array([RISK_WEIGHTS[c] for c in RISK_LABELS])
 
     def features_for(self, inp: DelayInput) -> dict[str, Any]:
+        return self._features(inp)[0]
+
+    def _features(self, inp: DelayInput) -> tuple[dict[str, Any], WeatherReading]:
         rates = get_rate_card()
         dest = rates.resolve_destination(inp.destination)
         carriers = {k: v for k, v in rates.data["carriers"].items() if not k.startswith("_")}
@@ -199,7 +208,13 @@ class DelayModel:
         from src.forecasting.data import normalize_commodity  # noqa: PLC0415
 
         commodity = normalize_commodity(inp.commodity)
-        return {
+        if inp.rain_mm is not None:
+            weather = WeatherReading(
+                rain_mm=inp.rain_mm, source="entered by user", date=eta.strftime("%Y-%m-%d")
+            )
+        else:
+            weather = get_rain(dest, eta.date())
+        features = {
             "distance_km": DISTANCE_KM[dest],
             "congestion": round(congestion, 3),
             "monsoon": int(eta.month in (11, 12, 1, 2)),
@@ -208,11 +223,13 @@ class DelayModel:
             "dangerous_goods": int(commodity == "chemicals"),
             "weekend_arrival": int(eta.dayofweek >= 5),
             "containers": inp.containers,
+            "rain_mm": round(weather.rain_mm, 1),
             "mode": mode,
             "carrier": inp.carrier,
             "port": inp.port,
             "commodity": commodity,
         }
+        return features, weather
 
     def _favourable(self, f: dict[str, Any]) -> dict[str, tuple[dict[str, Any], str]]:
         """Each situational driver set to its favourable value, with a human description."""
@@ -224,6 +241,7 @@ class DelayModel:
                 f"berth occupancy {f['congestion']:.0%}",
             ),
             "Monsoon season": ({"monsoon": 0}, "north-east monsoon (Nov-Feb)"),
+            "Heavy rain": ({"rain_mm": 0.0}, f"{f['rain_mm']:.0f} mm rain at destination"),
             "Holiday week": (
                 {"days_to_holiday": 15},
                 f"{f['days_to_holiday']} day(s) from Chinese New Year / Hari Raya",
@@ -243,7 +261,7 @@ class DelayModel:
         return alt
 
     def predict(self, inp: DelayInput) -> DelayPrediction:
-        f = self.features_for(inp)
+        f, weather = self._features(inp)
         p = self._proba(pd.DataFrame([f]))[0]
         score = float(self._score(p[None, :])[0])
 
@@ -288,6 +306,7 @@ class DelayModel:
         )
         rates = get_rate_card()
         return DelayPrediction(
+            weather=weather,
             destination_label=rates.destinations[rates.resolve_destination(inp.destination)][
                 "label"
             ],
@@ -321,6 +340,15 @@ def upcoming_shipments(start: str | None = None, days: int = 14, seed: int = 21)
         seed=seed,
     )
     return df.drop(columns=["delay_hours", "risk"]).rename(columns={"date": "eta"})
+
+
+def model_is_current(path: str | Path | None = None) -> bool:
+    """False if the saved model is missing or was trained on a different feature set."""
+    path = Path(path or get_settings().delay_model_path)
+    try:
+        return path.exists() and joblib.load(path).get("features") == list(FEATURES)
+    except Exception:  # noqa: BLE001 - unreadable file: retrain
+        return False
 
 
 @lru_cache
