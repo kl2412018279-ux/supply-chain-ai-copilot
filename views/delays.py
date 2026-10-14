@@ -55,9 +55,9 @@ with monitor:
     m = manifest(days)
     counts = m["risk"].value_counts()
     k1, k2, k3 = st.columns(3)
-    k1.metric("Arrivals", f"{len(m)}")
-    k2.metric("High risk", f"{counts.get('High', 0)}")
-    k3.metric("Medium risk", f"{counts.get('Medium', 0)}")
+    k1.metric("Arrivals", f"{len(m)}", border=True)
+    k2.metric("High risk", f"{counts.get('High', 0)}", border=True)
+    k3.metric("Medium risk", f"{counts.get('Medium', 0)}", border=True)
     view = m[m["risk"].isin(risk_filter or ["High", "Medium", "Low"])].copy()
     view["carrier"] = view["carrier"].map(lambda c: carriers[c]["label"])
     view["destination"] = view["destination"].map(lambda d: dests[d]["label"])
@@ -125,12 +125,13 @@ with check:
 
     with out:
         k1, k2, k3 = st.columns(3)
-        k1.metric("Delay risk", pred.risk)
-        k2.metric("Expected delay", f"{pred.expected_delay_hours:,.0f} h")
+        k1.metric("Delay risk", pred.risk, border=True)
+        k2.metric("Expected delay", f"{pred.expected_delay_hours:,.0f} h", border=True)
         k3.metric(
             "Demurrage exposure",
             rm(pred.demurrage_exposure_rm, 0),
             help="Expected port days beyond the free time × demurrage rate (rate card).",
+            border=True,
         )
 
         st.caption(

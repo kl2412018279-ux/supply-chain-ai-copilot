@@ -20,7 +20,6 @@ from src.costing.quote import QuoteRequest, build_quote, compare_modes
 from src.costing.road_routing import main_roads, with_road_route
 from src.costing.routing import Priorities, recommend
 from src.delays.model import DelayInput, get_delay_model
-from src.forecasting.esg_calculator import TransportMode, calculate_emissions
 from src.forecasting.predict import MAX_HORIZON_DAYS, get_forecaster
 from src.forecasting.volume_repository import get_volume_repository
 from src.guardrails.schemas import Source, ToolCall
@@ -42,8 +41,12 @@ class SpendArgs(ForecastArgs):
 class RouteArgs(QuoteRequest):
     priority_cost: float = Field(default=0.4, ge=0, description="Weight for low price")
     priority_speed: float = Field(default=0.2, ge=0, description="Weight for short transit")
-    priority_co2: float = Field(default=0.2, ge=0, description="Weight for low emissions")
-    priority_reliability: float = Field(default=0.2, ge=0, description="Weight for on-time history")
+    priority_reliability: float = Field(
+        default=0.25, ge=0, description="Weight for on-time history"
+    )
+    priority_safety: float = Field(
+        default=0.15, ge=0, description="Weight for low cargo damage / claims history"
+    )
 
 
 class ScorecardArgs(BaseModel):
@@ -52,16 +55,10 @@ class ScorecardArgs(BaseModel):
     )
 
 
-class EmissionArgs(BaseModel):
-    distance_km: float = Field(gt=0, description="Shipping distance in kilometres.")
-    weight_kg: float = Field(gt=0, description="Shipment weight in kilograms.")
-    mode: TransportMode = Field(default=TransportMode.truck, description="truck, rail, sea or air.")
-
-
 class DocumentSearchArgs(BaseModel):
     query: str = Field(
         description="What to look up in the operations manual: customs, dangerous goods, "
-        "palm oil, plastics, haulage, demurrage, warehousing, pricing or ESG rules."
+        "palm oil, plastics, haulage, demurrage, warehousing, pricing or compliance rules."
     )
     k: int = Field(default=4, ge=1, le=10)
 
@@ -134,12 +131,11 @@ def estimate_haulage_spend(
         "projected_cost_rm": round(unit.cost_rm * containers, 2),
         "projected_revenue_rm": round(unit.price_rm * containers, 2),
         "projected_diesel_litres": round(unit.diesel_litres * containers, 1),
-        "projected_co2e_kg": round(unit.co2e_kg * containers, 1),
     }
 
 
 def recommend_route_and_carrier(**kwargs: Any) -> dict[str, Any]:
-    weights = {k: kwargs.pop(f"priority_{k}") for k in ("cost", "speed", "co2", "reliability")}
+    weights = {k: kwargs.pop(f"priority_{k}") for k in ("cost", "speed", "reliability", "safety")}
     rec = recommend(QuoteRequest(**kwargs), Priorities(**weights))
     out = rec.model_dump(mode="json")
     out["options"] = out["options"][:5]
@@ -170,11 +166,27 @@ def get_haulier_scorecard(haulier: str | None = None) -> dict[str, Any] | list[d
     ]
 
 
-def calculate_shipping_emissions(
-    distance_km: float, weight_kg: float, mode: str = "truck"
-) -> dict[str, Any]:
-    mode = mode.value if isinstance(mode, TransportMode) else mode
-    return calculate_emissions(distance_km, weight_kg, mode).model_dump(mode="json")
+class FreeTimeArgs(BaseModel):
+    top: int = Field(default=8, ge=1, le=30, description="How many urgent containers to list")
+
+
+class MarginArgs(BaseModel):
+    days: int = Field(default=90, ge=7, le=365, description="Look-back window in days")
+
+
+def get_free_time_status(top: int = 8) -> dict[str, Any]:
+    from src.operations.freetime import generate_board, summarise  # noqa: PLC0415
+
+    today = date.today()
+    return summarise(generate_board(today), today, top=top).model_dump(mode="json")
+
+
+def get_margin_leakage(days: int = 90) -> dict[str, Any]:
+    from src.operations.margin import margin_summary  # noqa: PLC0415
+
+    out = margin_summary(days).model_dump(mode="json")
+    out["by_customer"] = out["by_customer"][:4]
+    return out
 
 
 def search_operations_documents(query: str, k: int = 4) -> list[dict[str, Any]]:
@@ -206,22 +218,22 @@ TOOL_SPECS: list[ToolSpec] = [
         "quote_container_job",
         "Price a container job out of Port Klang in Malaysian ringgit (RM): itemised fuel, "
         "truck, driver, tolls, port handling, customs, cargo surcharges, warehousing and margin, "
-        "plus diesel litres and CO2e.",
+        "plus diesel litres and margin.",
         quote_container_job,
         QuoteRequest,
     ),
     ToolSpec(
         "compare_transport_modes",
         "Quote every transport mode (truck, rail, sea) offered to a destination side by side, "
-        "with RM price, CO2e, and the RM cost per tonne of CO2e avoided.",
+        "with RM price, transit days, and the RM premium per transit day saved.",
         compare_transport_modes,
         QuoteRequest,
     ),
     ToolSpec(
         "recommend_route_and_carrier",
         "Recommend the best transport mode AND carrier for a job by balancing price (RM), "
-        "transit days, CO2e and historical on-time rate with priority weights; explains the "
-        "trade-off versus the fastest/cheapest alternative.",
+        "transit days, historical on-time rate and cargo damage rate with priority weights; "
+        "explains the trade-off versus the cheapest/fastest/most reliable alternative.",
         recommend_route_and_carrier,
         RouteArgs,
     ),
@@ -235,10 +247,27 @@ TOOL_SPECS: list[ToolSpec] = [
     ),
     ToolSpec(
         "get_haulier_scorecard",
-        "Haulier / carrier performance and ESG scorecard: on-time rate, damage rate, claims, "
-        "ESG evidence from their policy documents, composite grade (A-D) and ranking.",
+        "Haulier / carrier performance and compliance scorecard: on-time rate, damage rate, "
+        "claims, compliance evidence (DG training, driver hours, fleet, GPS tracking, cargo "
+        "insurance, ISO) from their policy documents, composite grade (A-D) and ranking.",
         get_haulier_scorecard,
         ScorecardArgs,
+    ),
+    ToolSpec(
+        "get_free_time_status",
+        "Live import containers on the free-time clock: which are past or near their last free "
+        "day, demurrage / port storage / detention accrued and at the planned move (RM), and "
+        "the next action for each (book haulier, chase customs, return empty).",
+        get_free_time_status,
+        FreeTimeArgs,
+    ),
+    ToolSpec(
+        "get_margin_leakage",
+        "Job profitability over the last N days: quoted vs actual gross margin, RM lost to "
+        "each leak (unbilled waiting time, absorbed demurrage/detention, late penalties, "
+        "damage claims, diesel above quote), margin by customer and the weakest lanes.",
+        get_margin_leakage,
+        MarginArgs,
     ),
     ToolSpec(
         "forecast_container_volume",
@@ -249,7 +278,7 @@ TOOL_SPECS: list[ToolSpec] = [
     ),
     ToolSpec(
         "estimate_haulage_spend",
-        "Project haulage cost, revenue, diesel and CO2e in RM for a commodity over the next N "
+        "Project haulage cost, revenue and diesel in RM for a commodity over the next N "
         "days by combining the volume forecast with the rate card.",
         estimate_haulage_spend,
         SpendArgs,
@@ -265,16 +294,9 @@ TOOL_SPECS: list[ToolSpec] = [
         "search_operations_documents",
         "Search the company operations manual: customs forms (K1/K2/K8), dangerous-goods "
         "chemicals, palm oil, plastics, haulage rules, demurrage/detention, warehousing, "
-        "pricing policy and ESG commitments.",
+        "pricing policy, subcontractor compliance and cargo claims.",
         search_operations_documents,
         DocumentSearchArgs,
-    ),
-    ToolSpec(
-        "calculate_shipping_emissions",
-        "Generic CO2e estimate (kg) for any shipment from distance, weight and mode "
-        "(truck, rail, sea, air) using tonne-km factors.",
-        calculate_shipping_emissions,
-        EmissionArgs,
     ),
 ]
 TOOLS_BY_NAME = {spec.name: spec for spec in TOOL_SPECS}

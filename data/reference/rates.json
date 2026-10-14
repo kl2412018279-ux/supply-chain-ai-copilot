@@ -14,10 +14,6 @@
     "litres_per_km_empty": {
       "value": 0.32,
       "source": "Typical prime mover + empty trailer, assumption"
-    },
-    "kg_co2_per_litre_diesel": {
-      "value": 2.68,
-      "source": "Standard tank-to-wheel diesel combustion factor"
     }
   },
   "truck": {
@@ -120,15 +116,13 @@
       "40": 1.6
     },
     "first_last_mile_km": 25,
-    "kg_co2e_per_tonne_km": 0.028,
-    "_source": "Assumption: KTMB intermodal linehaul; GLEC-style rail factor"
+    "_source": "Assumption: KTMB intermodal linehaul"
   },
   "sea": {
     "rm_per_container": {
       "20": 2800.0,
       "40": 4200.0
     },
-    "kg_co2e_per_tonne_km": 0.016,
     "_source": "Assumption: Port Klang to East Malaysia coastal shipping"
   },
   "margin_pct": 15,
@@ -314,14 +308,13 @@
     "sea_km_per_day": 650
   },
   "carriers": {
-    "_note": "FICTIONAL carriers/hauliers. price_factor scales haulage cost lines, co2_factor scales emissions (fleet age/engine standard), transit_days_delta adjusts transit.",
+    "_note": "FICTIONAL carriers/hauliers. price_factor scales haulage cost lines, transit_days_delta adjusts transit, fleet describes the equipment.",
     "muara-fleet": {
       "label": "Muara own fleet",
       "modes": [
         "truck"
       ],
       "price_factor": 1.0,
-      "co2_factor": 1.0,
       "transit_days_delta": 0,
       "fleet": "Euro 5 prime movers"
     },
@@ -331,7 +324,6 @@
         "truck"
       ],
       "price_factor": 0.88,
-      "co2_factor": 1.18,
       "transit_days_delta": 0,
       "fleet": "Older Euro 3 fleet"
     },
@@ -341,9 +333,8 @@
         "truck"
       ],
       "price_factor": 1.1,
-      "co2_factor": 0.8,
       "transit_days_delta": 0,
-      "fleet": "Euro 6 + LNG prime movers"
+      "fleet": "Euro 6 prime movers, under 4 years old"
     },
     "raillink": {
       "label": "RailLink Intermodal",
@@ -351,7 +342,6 @@
         "rail"
       ],
       "price_factor": 1.0,
-      "co2_factor": 1.0,
       "transit_days_delta": 0,
       "fleet": "Rail + partner first/last mile"
     },
@@ -361,7 +351,6 @@
         "sea"
       ],
       "price_factor": 1.0,
-      "co2_factor": 1.0,
       "transit_days_delta": 0,
       "fleet": "Feeder vessels"
     },
@@ -371,7 +360,6 @@
         "sea"
       ],
       "price_factor": 1.15,
-      "co2_factor": 1.05,
       "transit_days_delta": -1,
       "fleet": "Faster feeder service"
     }

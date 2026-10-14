@@ -10,7 +10,7 @@
         "options": {}
       },
       "id": "a1f0c7d2-0001-4c1e-9a10-000000000001",
-      "name": "New file in ESG folder",
+      "name": "New file in policies folder",
       "type": "n8n-nodes-base.googleDriveTrigger",
       "typeVersion": 1,
       "position": [240, 300]
@@ -62,7 +62,7 @@
     }
   ],
   "connections": {
-    "New file in ESG folder": { "main": [[{ "node": "Is PDF / TXT / MD?", "type": "main", "index": 0 }]] },
+    "New file in policies folder": { "main": [[{ "node": "Is PDF / TXT / MD?", "type": "main", "index": 0 }]] },
     "Is PDF / TXT / MD?": { "main": [[{ "node": "Download file", "type": "main", "index": 0 }], []] },
     "Download file": { "main": [[{ "node": "POST to Copilot /documents/ingest", "type": "main", "index": 0 }]] }
   },

@@ -9,10 +9,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 11 0 R >> >> /Contents 4 0 R >>
 endobj
 4 0 obj
-<< /Length 3087 >>
+<< /Length 3071 >>
 stream
 BT /F1 10 Tf 13 TL 50 750 Td
-(Muara Logistics Sdn Bhd - Operations, Compliance and Sustainability Manual \(2026 edition\)) Tj T*
+(Muara Logistics Sdn Bhd - Operations and Compliance Manual \(2026 edition\)) Tj T*
 () Tj T*
 (FICTIONAL SAMPLE DOCUMENT. Muara Logistics is a fictional company created for the Freight Ops) Tj T*
 (Copilot portfolio project. Rules below are simplified examples written for the demo; always) Tj T*
@@ -129,7 +129,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 11 0 R >> >> /Contents 8 0 R >>
 endobj
 8 0 obj
-<< /Length 2902 >>
+<< /Length 2904 >>
 stream
 BT /F1 10 Tf 13 TL 50 750 Td
 (Section 6. Haulage Operations) Tj T*
@@ -143,7 +143,8 @@ BT /F1 10 Tf 13 TL 50 750 Td
 (the container seal number before leaving the port.) Tj T*
 () Tj T*
 (6.3 Rail \(KTMB intermodal\) is offered for Ipoh and Prai \(Penang\). For distances above 200 km,) Tj T*
-(planners must quote both truck and rail options so the customer can compare cost and emissions.) Tj T*
+(planners must quote both truck and rail options so the customer can compare cost and transit) Tj T*
+(time.) Tj T*
 () Tj T*
 (6.4 Shipments to Sabah and Sarawak travel by coastal shipping from Port Klang. Delivery inside) Tj T*
 (East Malaysia is subcontracted to partner hauliers and quoted separately.) Tj T*
@@ -181,7 +182,6 @@ BT /F1 10 Tf 13 TL 50 750 Td
 () Tj T*
 (9.2 The standard margin on cost is 15 percent. Discounts above 5 percent require approval from) Tj T*
 (the Commercial Manager.) Tj T*
-() Tj T*
 ET
 endstream
 endobj
@@ -189,25 +189,36 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 11 0 R >> >> /Contents 10 0 R >>
 endobj
 10 0 obj
-<< /Length 877 >>
+<< /Length 1558 >>
 stream
 BT /F1 10 Tf 13 TL 50 750 Td
+() Tj T*
 (9.3 Quotes are valid for 7 days because diesel prices change weekly.) Tj T*
 () Tj T*
-(Section 10. Sustainability and ESG) Tj T*
+(Section 10. Subcontractor and Fleet Compliance) Tj T*
 () Tj T*
-(10.1 Muara Logistics commits to reduce fleet emissions per TEU moved by 30 percent by 2030) Tj T*
-(against a 2024 baseline, through rail modal shift, route optimisation and newer Euro 5 prime) Tj T*
-(movers.) Tj T*
+(10.1 Our own fleet is made up of Euro 5 prime movers. Every prime mover and trailer follows a) Tj T*
+(preventive maintenance schedule every 10,000 km, and a truck that misses its service is taken) Tj T*
+(off the roster.) Tj T*
 () Tj T*
-(10.2 Emissions are calculated from actual diesel consumption using 2.68 kg of CO2 per litre of) Tj T*
-(diesel. Every quotation shows the estimated CO2e next to the price.) Tj T*
+(10.2 Drivers work a maximum of 11 hours per day, with a 30-minute rest break after every 4) Tj T*
+(hours of driving. Planners must not roster a driver for a night run after a full day shift.) Tj T*
 () Tj T*
-(10.3 Idling is limited to 5 minutes. Drivers must switch off engines while waiting in port) Tj T*
-(queues.) Tj T*
+(10.3 All DG drivers complete dangerous goods training at least every two years in addition to) Tj T*
+(holding the GDL DG endorsement.) Tj T*
 () Tj T*
-(10.4 Subcontracted hauliers must report fuel use quarterly and comply with the company code of) Tj T*
-(conduct, including fair working hours and no forced labour.) Tj T*
+(10.4 Every prime mover carries a GPS unit. The control room monitors real-time tracking of all) Tj T*
+(loaded containers and alerts the customer when a delivery is expected to be more than 2 hours) Tj T*
+(late.) Tj T*
+() Tj T*
+(10.5 Muara Logistics holds goods-in-transit insurance of RM 300,000 per container. Cargo damage) Tj T*
+(must be photographed and reported to the Claims Officer within 24 hours, and claims are filed) Tj T*
+(with the insurer within 7 days.) Tj T*
+() Tj T*
+(10.6 Our operations are certified to ISO 9001 quality management.) Tj T*
+() Tj T*
+(10.7 Subcontracted hauliers must hold valid goods-in-transit insurance, provide GPS tracking,) Tj T*
+(follow the same driver working hours and pass an annual compliance audit before receiving jobs.) Tj T*
 ET
 endstream
 endobj
@@ -221,15 +232,15 @@ xref
 0000000058 00000 n 
 0000000133 00000 n 
 0000000260 00000 n 
-0000003399 00000 n 
-0000003526 00000 n 
-0000006470 00000 n 
-0000006597 00000 n 
-0000009551 00000 n 
-0000009679 00000 n 
-0000010608 00000 n 
+0000003383 00000 n 
+0000003510 00000 n 
+0000006454 00000 n 
+0000006581 00000 n 
+0000009537 00000 n 
+0000009665 00000 n 
+0000011276 00000 n 
 trailer
 << /Size 12 /Root 1 0 R >>
 startxref
-10679
+11347
 %%EOF

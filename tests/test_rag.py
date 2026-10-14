@@ -33,9 +33,9 @@ def test_chunk_text_rejects_bad_overlap():
 
 
 def test_extract_pages_from_pdf():
-    pages = extract_pages(_make_pdf("Hello ESG world.\nScope 3 emissions."), "x.pdf")
+    pages = extract_pages(_make_pdf("Hello freight world.\nSection 3 demurrage."), "x.pdf")
     assert pages[0][0] == 1
-    assert "Scope 3" in pages[0][1]
+    assert "Section 3" in pages[0][1]
 
 
 def test_extract_pages_rejects_unknown_type():

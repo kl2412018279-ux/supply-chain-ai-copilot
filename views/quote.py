@@ -19,8 +19,8 @@ dests = base_rates.destinations
 
 page_header(
     "Quote",
-    "Itemised job price in ringgit from the rate card, with CO2e from the same diesel litres. "
-    "Change any input and everything updates.",
+    "Itemised job price in ringgit from the rate card, with your margin and the diesel it "
+    "burns. Change any input and everything updates.",
 )
 
 form, result = st.columns([1, 1.7], gap="large")
@@ -88,11 +88,10 @@ with result:
     k1.metric(
         "Quoted price", rm(q.price_rm, 0),
         delta=f"{rm(delta, 0)} vs rate card" if scenario and abs(delta) >= 0.5 else None,
-        delta_color="inverse",
-    )  # fmt: skip
-    k2.metric("Per container", rm(q.price_per_container_rm, 0))
-    k3.metric("Cost", rm(q.cost_rm, 0), help=f"{q.margin_pct:.0f}% margin = {rm(q.margin_rm)}")
-    k4.metric("CO2e", f"{q.co2e_kg:,.0f} kg", help=f"Diesel ≈ {q.diesel_litres:,.0f} L")
+        delta_color="inverse", border=True)  # fmt: skip
+    k2.metric("Per container", rm(q.price_per_container_rm, 0), border=True)
+    k3.metric("Cost", rm(q.cost_rm, 0), help=f"Diesel ≈ {q.diesel_litres:,.0f} L", border=True)
+    k4.metric("Margin", rm(q.margin_rm, 0), help=f"{q.margin_pct:.0f}% on cost", border=True)
     st.caption(
         f"{q.containers} × {q.container_size}ft {base_rates.cargo_types[cargo]['label'].lower()} · "
         f"{q.origin_label} → {q.destination_label} · {q.distance_km:,.0f} km by {q.mode.value} "
@@ -220,7 +219,12 @@ with result:
             m1, m2 = st.columns(2)
             for col, title, values, fmt in (
                 (m1, "Price", [x.price_rm for x in cmp.quotes], "RM{:,.0f}"),
-                (m2, "CO2e (kg)", [x.co2e_kg for x in cmp.quotes], "{:,.0f} kg"),
+                (
+                    m2,
+                    "Transit days",
+                    [cmp.transit_days[x.mode.value] for x in cmp.quotes],
+                    "{:,.0f} d",
+                ),
             ):
                 fig = go.Figure(
                     go.Bar(
@@ -236,15 +240,14 @@ with result:
                 with col:
                     st.markdown(f"**{title}**")
                     show(fig)
-            cheap, green = cmp.cheapest_mode.value, cmp.lowest_co2_mode.value
-            if cmp.carbon_abatement_rm_per_tonne is None:
-                st.success(
-                    f"{green.capitalize()} is both the cheapest and the lowest-emission option."
-                )
+            cheap, fast = cmp.cheapest_mode.value, cmp.fastest_mode.value
+            if cmp.premium_rm_per_day_saved is None:
+                st.success(f"{cheap.capitalize()} is both the cheapest and the fastest option.")
             else:
+                saved = cmp.transit_days[cheap] - cmp.transit_days[fast]
                 st.info(
-                    f"{green.capitalize()} cuts CO2e but costs "
-                    f"{rm(cmp.carbon_abatement_rm_per_tonne, 0)} per tonne avoided vs {cheap}."
+                    f"{fast.capitalize()} is {saved} day{'s' if saved > 1 else ''} faster than "
+                    f"{cheap} but costs {rm(cmp.premium_rm_per_day_saved, 0)} more per day saved."
                 )
 
     else:  # diesel sensitivity

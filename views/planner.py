@@ -1,4 +1,4 @@
-"""Route & carrier planner: weigh price, speed, CO2e and reliability."""
+"""Route & carrier planner: weigh price, speed, reliability and cargo safety."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ dests = rates.destinations
 page_header(
     "Route planner",
     "Every mode and carrier that serves the destination, ranked by your priorities. Price comes "
-    "from the rate card, reliability from each carrier's delivery history.",
+    "from the rate card; on-time and damage rates from each carrier's delivery history.",
 )
 
 form, result = st.columns([1, 1.9], gap="large")
@@ -40,49 +40,62 @@ with form, st.container(border=True):
     st.caption("Relative weights; they are normalised to 100%.")
     w_cost = st.slider("Low price", 0, 10, 4)
     w_speed = st.slider("Fast delivery", 0, 10, 2)
-    w_co2 = st.slider("Low emissions", 0, 10, 2)
-    w_rel = st.slider("Reliability", 0, 10, 2)
+    w_rel = st.slider("Reliability", 0, 10, 3, help="Historical on-time delivery rate.")
+    w_safe = st.slider(
+        "Cargo safety", 0, 10, 2, help="Historical share of jobs with cargo damage / claims."
+    )
 
 rec = recommend(
     QuoteRequest(destination=dest, cargo_type=cargo, container_size=size, containers=int(qty)),
-    Priorities(cost=w_cost, speed=w_speed, co2=w_co2, reliability=w_rel),
+    Priorities(cost=w_cost, speed=w_speed, reliability=w_rel, safety=w_safe),
 )
 best = rec.recommended
 
 with result:
     st.success(rec.explanation, icon=":material/route:")
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Price", f"RM{best.price_rm:,.0f}")
-    k2.metric("Transit", f"{best.transit_days} day" + ("s" if best.transit_days > 1 else ""))
-    k3.metric("CO2e", f"{best.co2e_kg:,.0f} kg")
-    k4.metric("On time (history)", f"{best.on_time_rate:.0%}")
+    k1.metric("Price", f"RM{best.price_rm:,.0f}", border=True)
+    k2.metric(
+        "Transit", f"{best.transit_days} day" + ("s" if best.transit_days > 1 else ""), border=True
+    )
+    k3.metric("On time", f"{best.on_time_rate:.0%}", border=True, help="From delivery history")
+    k4.metric(
+        "Damage", f"{best.damage_rate:.1%}", border=True, help="Damaged deliveries, from history"
+    )
 
     names = [f"{o.carrier_label} · {o.mode.value}" for o in rec.options]
+    # Alternate labels above / below so options with the same transit time don't overlap.
+    positions = ["top center"] * len(rec.options)
+    for n, idx in enumerate(sorted(range(len(rec.options)), key=lambda k: rec.options[k].price_rm)):
+        positions[idx] = "top center" if n % 2 == 0 else "bottom center"
     fig = go.Figure(
         go.Scatter(
             x=[o.price_rm for o in rec.options],
-            y=[o.co2e_kg for o in rec.options],
+            y=[o.transit_days for o in rec.options],
             mode="markers+text",
-            text=names,
-            textposition="top center",
+            text=[o.carrier_label for o in rec.options],
+            textposition=positions,
             cliponaxis=False,
             marker=dict(
-                size=[12 + 6 * o.transit_days for o in rec.options],
+                size=[max(10.0, 12 + 160 * (o.on_time_rate - 0.8)) for o in rec.options],
                 color=[BLUE if o is best else MUTED for o in rec.options],
                 line=dict(width=1.5, color="white"),
             ),
-            customdata=[[o.transit_days, f"{o.on_time_rate:.0%}", o.fit] for o in rec.options],
-            hovertemplate="%{text}<br>RM%{x:,.0f} · %{y:,.0f} kg CO2e<br>"
-            "%{customdata[0]} day(s) · %{customdata[1]} on time · fit %{customdata[2]}"
+            customdata=[
+                [f"{o.on_time_rate:.0%}", f"{o.damage_rate:.1%}", o.fit] for o in rec.options
+            ],
+            hovertemplate="%{text}<br>RM%{x:,.0f} · %{y} day(s)<br>"
+            "%{customdata[0]} on time · %{customdata[1]} damaged · fit %{customdata[2]}"
             "<extra></extra>",
         )
     )
-    style(fig, height=340, x_title="Price", y_title="CO2e (kg)")
+    style(fig, height=340, x_title="Price", y_title="Transit days")
     fig.update_xaxes(
         tickprefix="RM", tickformat=",.0f", showgrid=True, gridcolor="rgba(128,128,128,0.16)"
     )
+    fig.update_yaxes(dtick=1, rangemode="tozero")
     fig.update_layout(margin=dict(l=4, r=24, t=28, b=4))
-    st.markdown("**Price vs emissions** · bubble size = transit days · blue = recommended")
+    st.markdown("**Price vs transit time** · bubble size = on-time rate · blue = recommended")
     show(fig)
 
     table = pd.DataFrame(
@@ -91,8 +104,8 @@ with result:
                 "Option": f"{o.carrier_label} ({o.mode.value})",
                 "Price": o.price_rm,
                 "Days": o.transit_days,
-                "CO2e kg": o.co2e_kg,
                 "On time": o.on_time_rate,
+                "Damage rate": o.damage_rate,
                 "Fit": o.fit,
             }
             for o in rec.options
@@ -102,8 +115,8 @@ with result:
         table, hide_index=True, width="stretch",
         column_config={
             "Price": st.column_config.NumberColumn(format="RM %,.0f"),
-            "CO2e kg": st.column_config.NumberColumn(format="%,.0f"),
             "On time": st.column_config.NumberColumn(format="percent"),
+            "Damage rate": st.column_config.NumberColumn(format="percent"),
             "Fit": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f"),
             "Days": st.column_config.NumberColumn(width="small"),
         },
