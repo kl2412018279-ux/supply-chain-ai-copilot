@@ -44,6 +44,8 @@ from src.forecasting.volume_repository import VolumeSummary, get_volume_reposito
 from src.guardrails.schemas import CopilotResponse, Source
 from src.hauliers.scorecard import HaulierScore, build_scorecard, monthly_on_time
 from src.observability import metrics
+from src.operations.freetime import FreeTimeSummary, generate_board, summarise
+from src.operations.margin import MarginSummary, margin_summary
 from src.rag.ingest_pdf import SUPPORTED_SUFFIXES, ingest_bytes, ingest_directory
 from src.rag.retriever import HybridRetriever, get_retriever
 from src.rag.vector_store import get_vector_store
@@ -263,6 +265,19 @@ def delays_upcoming(
     """Synthetic manifest of upcoming arrivals, scored and sorted by risk."""
     scored = model.score_frame(upcoming_shipments(days=days))
     return scored.sort_values("risk_score", ascending=False).to_dict(orient="records")
+
+
+@app.get("/operations/free-time", response_model=FreeTimeSummary)
+def operations_free_time(top: int = Query(default=8, ge=1, le=30)) -> FreeTimeSummary:
+    """Import containers on the demurrage / detention clock, most urgent first."""
+    today = date.today()
+    return summarise(generate_board(today), today, top=top)
+
+
+@app.get("/operations/margin", response_model=MarginSummary)
+def operations_margin(days: int = Query(default=90, ge=7, le=365)) -> MarginSummary:
+    """Quoted vs actual job margin over the last ``days`` days, and where it leaked."""
+    return margin_summary(days)
 
 
 @app.get("/hauliers/scorecard", response_model=list[HaulierScore])

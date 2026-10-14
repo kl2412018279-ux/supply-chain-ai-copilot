@@ -34,8 +34,15 @@ h2 { letter-spacing: -0.02em; }
 .sec span { opacity: 0.6; font-size: 0.85rem; }
 
 /* metric cards */
-[data-testid="stMetric"] { padding: 0.9rem 1rem 0.7rem; }
+[data-testid="stMetric"] { padding: 0.9rem 0.9rem 0.7rem; container-type: inline-size; }
+[data-testid="stMetricValue"] > div { font-size: clamp(1.15rem, 17cqi, 1.75rem); }
 [data-testid="stMetricLabel"] p { font-size: 0.8rem; opacity: 0.75; }
+
+/* suggestion buttons: left-aligned rows */
+.stButton button[kind="tertiary"] { justify-content: flex-start; text-align: left;
+  width: 100%; padding: 0.35rem 0.5rem; border-radius: 0.4rem; }
+.stButton button[kind="tertiary"]:hover { background: rgba(42,120,214,0.08); }
+.stButton button[kind="tertiary"] p { opacity: 0.85; }
 
 /* pills */
 .pill { display: inline-block; padding: 0.08rem 0.55rem; border-radius: 999px;
@@ -80,7 +87,15 @@ def rm_short(value: float) -> str:
     return f"RM{value:,.0f}"
 
 
+SECTIONS = {
+    "Copilot": "Assistant", "Quote": "Commercial", "Route planner": "Commercial",
+    "Delay risk": "Operations", "Forecast": "Operations", "Document intake": "Operations",
+    "Hauliers": "Partners", "Documents": "Knowledge",
+}  # fmt: skip
+
+
 def page_header(title: str, subtitle: str, eyebrow: str | None = None) -> None:
+    eyebrow = eyebrow or SECTIONS.get(title)
     if eyebrow:
         st.html(f'<div class="ph-eyebrow">{eyebrow}</div>')
     st.markdown(f"## {title}")

@@ -61,13 +61,16 @@ pick = st.selectbox(
 s = next(x for x in scores if x.haulier == pick)
 
 k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Grade", f"{s.grade} · #{s.rank}")
+k1.metric("Grade", f"{s.grade} · #{s.rank}", border=True)
 k2.metric(
-    "On time", f"{s.on_time_rate:.1%}", help=f"Late jobs average {s.avg_late_hours:.0f} h late"
+    "On time",
+    f"{s.on_time_rate:.1%}",
+    help=f"Late jobs average {s.avg_late_hours:.0f} h late",
+    border=True,
 )
-k3.metric("Damage rate", f"{s.damage_rate:.1%}")
-k4.metric("Claims", rm(s.claims_rm, 0))
-k5.metric("Compliance", f"{sum(e.met for e in s.compliance)}/{len(s.compliance)}")
+k3.metric("Damage rate", f"{s.damage_rate:.1%}", border=True)
+k4.metric("Claims", rm(s.claims_rm, 0), border=True)
+k5.metric("Compliance", f"{sum(e.met for e in s.compliance)}/{len(s.compliance)}", border=True)
 st.caption(
     f"{s.fleet} · {', '.join(s.modes)} · {s.deliveries:,} deliveries, {s.containers:,} containers"
 )

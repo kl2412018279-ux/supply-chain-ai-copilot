@@ -261,3 +261,21 @@ def test_langgraph_agent_executes_tool_calls(trained_model):
     assert price > 0 and out.tool_calls[0].output["destination"] == "shah-alam"
     # second LLM turn received the tool result
     assert f'"price_rm": {price}' in llm.seen[1][-1].content
+
+
+def test_routes_free_time_question(agent):
+    out = agent.run("Which containers are about to incur demurrage?")
+    assert [c.name for c in out.tool_calls] == ["get_free_time_status"]
+    assert "Free-time clock" in out.answer and "Next:" in out.answer
+
+
+def test_routes_margin_question_with_window(agent):
+    out = agent.run("Where are we losing margin in the last 30 days?")
+    call = out.tool_calls[0]
+    assert call.name == "get_margin_leakage" and call.arguments["days"] == 30
+    assert "Biggest leaks" in out.answer
+
+
+def test_quote_with_margin_word_still_quotes(agent):
+    out = agent.run("Quote a 40ft container to Shah Alam and show the margin")
+    assert out.tool_calls[0].name == "quote_container_job"

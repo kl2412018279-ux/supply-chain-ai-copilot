@@ -19,7 +19,18 @@ def app(trained_model, ingested_store, delay_model):
     return at
 
 
+def test_control_tower_is_home(app):
+    labels = [m.label for m in app.metric]
+    for label in ("Past free time", "Charges at planned move", "Gross margin (90 d)",
+                  "Margin leaked (90 d)", "On-time delivery (30 d)"):  # fmt: skip
+        assert label in labels
+    assert any("Biggest leak" in i.value for i in app.info)
+    app.pills[0].set_value(["Customs hold"]).run()
+    assert not app.exception
+
+
 def test_copilot_page_suggestion_and_chat(app):
+    app.switch_page("views/copilot.py").run()
     # Empty state shows one-click suggestions
     labels = [b.label for b in app.button]
     assert any(label.startswith("Quote 2 x 40ft") for label in labels)
@@ -70,7 +81,7 @@ def test_new_pages_render(app):
     assert not app.exception
     assert any("Recommended:" in a.value for a in app.success)
     labels = {m.label for m in app.metric}
-    assert {"On time (history)", "Damage rate (history)"} <= labels
+    assert {"On time", "Damage"} <= labels
     assert {s.label for s in app.slider} >= {"Low price", "Fast delivery", "Cargo safety"}
 
     app.switch_page("views/delays.py").run()

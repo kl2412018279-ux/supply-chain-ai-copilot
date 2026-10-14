@@ -54,19 +54,27 @@ best = rec.recommended
 with result:
     st.success(rec.explanation, icon=":material/route:")
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Price", f"RM{best.price_rm:,.0f}")
-    k2.metric("Transit", f"{best.transit_days} day" + ("s" if best.transit_days > 1 else ""))
-    k3.metric("On time (history)", f"{best.on_time_rate:.0%}")
-    k4.metric("Damage rate (history)", f"{best.damage_rate:.1%}")
+    k1.metric("Price", f"RM{best.price_rm:,.0f}", border=True)
+    k2.metric(
+        "Transit", f"{best.transit_days} day" + ("s" if best.transit_days > 1 else ""), border=True
+    )
+    k3.metric("On time", f"{best.on_time_rate:.0%}", border=True, help="From delivery history")
+    k4.metric(
+        "Damage", f"{best.damage_rate:.1%}", border=True, help="Damaged deliveries, from history"
+    )
 
     names = [f"{o.carrier_label} · {o.mode.value}" for o in rec.options]
+    # Alternate labels above / below so options with the same transit time don't overlap.
+    positions = ["top center"] * len(rec.options)
+    for n, idx in enumerate(sorted(range(len(rec.options)), key=lambda k: rec.options[k].price_rm)):
+        positions[idx] = "top center" if n % 2 == 0 else "bottom center"
     fig = go.Figure(
         go.Scatter(
             x=[o.price_rm for o in rec.options],
             y=[o.transit_days for o in rec.options],
             mode="markers+text",
-            text=names,
-            textposition="top center",
+            text=[o.carrier_label for o in rec.options],
+            textposition=positions,
             cliponaxis=False,
             marker=dict(
                 size=[max(10.0, 12 + 160 * (o.on_time_rate - 0.8)) for o in rec.options],
