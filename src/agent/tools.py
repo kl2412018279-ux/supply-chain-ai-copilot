@@ -8,6 +8,7 @@ offline rule-based agent, the FastAPI endpoints and the unit tests.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -15,18 +16,24 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.costing.quote import QuoteRequest, build_quote, compare_modes
 from src.forecasting.esg_calculator import TransportMode, calculate_emissions
 from src.forecasting.predict import MAX_HORIZON_DAYS, get_forecaster
-from src.forecasting.sales_repository import get_sales_repository
+from src.forecasting.volume_repository import get_volume_repository
 from src.guardrails.schemas import Source, ToolCall
 from src.rag.retriever import get_retriever
 
 
 class ForecastArgs(BaseModel):
-    sku: str = Field(description="Product SKU code, e.g. 'SKU-101'.")
+    commodity: str = Field(description="chemicals, palm-oil, plastics or general.")
     horizon_days: int = Field(
         default=14, ge=1, le=MAX_HORIZON_DAYS, description="Number of days to forecast."
     )
+
+
+class SpendArgs(ForecastArgs):
+    destination: str = Field(default="Shah Alam", description="Typical delivery point.")
+    container_size: str = Field(default="20", description="'20' or '40' (feet).")
 
 
 class EmissionArgs(BaseModel):
@@ -36,28 +43,73 @@ class EmissionArgs(BaseModel):
 
 
 class DocumentSearchArgs(BaseModel):
-    query: str = Field(description="What to look up in ESG / sustainability / policy documents.")
+    query: str = Field(
+        description="What to look up in the operations manual: customs, dangerous goods, "
+        "palm oil, plastics, haulage, demurrage, warehousing, pricing or ESG rules."
+    )
     k: int = Field(default=4, ge=1, le=10)
 
 
-class SalesSummaryArgs(BaseModel):
-    sku: str | None = Field(default=None, description="Optional SKU filter.")
+class VolumeSummaryArgs(BaseModel):
+    commodity: str | None = Field(default=None, description="Optional commodity filter.")
     start_date: date | None = Field(default=None, description="Optional start date (YYYY-MM-DD).")
     end_date: date | None = Field(default=None, description="Optional end date (YYYY-MM-DD).")
 
 
-def forecast_demand(sku: str, horizon_days: int = 14) -> dict[str, Any]:
+def forecast_container_volume(commodity: str, horizon_days: int = 14) -> dict[str, Any]:
     forecaster = get_forecaster()
-    df = forecaster.forecast(sku, horizon_days)
+    df = forecaster.forecast(commodity, horizon_days)
     return {
-        "sku": forecaster.resolve_sku(sku),
+        "commodity": forecaster.resolve_commodity(commodity),
         "horizon_days": horizon_days,
         "start_date": df["date"].iloc[0],
         "end_date": df["date"].iloc[-1],
-        "total_units": round(float(df["forecast"].sum()), 1),
-        "avg_daily_units": round(float(df["forecast"].mean()), 1),
+        "total_teu": round(float(df["forecast"].sum()), 1),
+        "avg_daily_teu": round(float(df["forecast"].mean()), 1),
+        "peak_day": df.loc[df["forecast"].idxmax(), "date"],
         "daily": df.to_dict(orient="records"),
-        "model_validation_mae": round(forecaster.metrics.get("mae", float("nan")), 2),
+        "model_validation_mae_teu": round(forecaster.metrics.get("mae", float("nan")), 2),
+    }
+
+
+def quote_container_job(**kwargs: Any) -> dict[str, Any]:
+    return build_quote(QuoteRequest(**kwargs)).model_dump(mode="json")
+
+
+def compare_transport_modes(**kwargs: Any) -> dict[str, Any]:
+    return compare_modes(QuoteRequest(**kwargs)).model_dump(mode="json")
+
+
+def estimate_haulage_spend(
+    commodity: str,
+    horizon_days: int = 30,
+    destination: str = "Shah Alam",
+    container_size: str = "20",
+) -> dict[str, Any]:
+    """Forecast TEU x per-container quote = projected haulage revenue/cost for the period."""
+    volume = forecast_container_volume(commodity, horizon_days)
+    teu_per_box = 2 if str(container_size).replace("ft", "") == "40" else 1
+    containers = max(math.ceil(volume["total_teu"] / teu_per_box), 1)
+    unit = build_quote(
+        QuoteRequest(
+            destination=destination,
+            container_size=container_size,
+            containers=1,
+            cargo_type=volume["commodity"],
+        )
+    )
+    return {
+        "commodity": volume["commodity"],
+        "period": f"{volume['start_date']} to {volume['end_date']}",
+        "forecast_teu": volume["total_teu"],
+        "containers": containers,
+        "destination": unit.destination_label,
+        "cost_per_container_rm": unit.cost_rm,
+        "price_per_container_rm": unit.price_rm,
+        "projected_cost_rm": round(unit.cost_rm * containers, 2),
+        "projected_revenue_rm": round(unit.price_rm * containers, 2),
+        "projected_diesel_litres": round(unit.diesel_litres * containers, 1),
+        "projected_co2e_kg": round(unit.co2e_kg * containers, 1),
     }
 
 
@@ -68,7 +120,7 @@ def calculate_shipping_emissions(
     return calculate_emissions(distance_km, weight_kg, mode).model_dump(mode="json")
 
 
-def search_esg_documents(query: str, k: int = 4) -> list[dict[str, Any]]:
+def search_operations_documents(query: str, k: int = 4) -> list[dict[str, Any]]:
     results = get_retriever().search(query, k=k)
     return [
         Source(
@@ -78,10 +130,10 @@ def search_esg_documents(query: str, k: int = 4) -> list[dict[str, Any]]:
     ]
 
 
-def get_sales_summary(
-    sku: str | None = None, start_date: date | None = None, end_date: date | None = None
+def get_volume_summary(
+    commodity: str | None = None, start_date: date | None = None, end_date: date | None = None
 ) -> dict[str, Any]:
-    return get_sales_repository().summary(sku, start_date, end_date).model_dump()
+    return get_volume_repository().summary(commodity, start_date, end_date).model_dump()
 
 
 @dataclass(frozen=True)
@@ -94,32 +146,55 @@ class ToolSpec:
 
 TOOL_SPECS: list[ToolSpec] = [
     ToolSpec(
-        "forecast_demand",
-        "Forecast daily product demand (units) for a SKU over the next N days using the "
-        "trained LightGBM model.",
-        forecast_demand,
+        "quote_container_job",
+        "Price a container job out of Port Klang in Malaysian ringgit (RM): itemised fuel, "
+        "truck, driver, tolls, port handling, customs, cargo surcharges, warehousing and margin, "
+        "plus diesel litres and CO2e.",
+        quote_container_job,
+        QuoteRequest,
+    ),
+    ToolSpec(
+        "compare_transport_modes",
+        "Quote every transport mode (truck, rail, sea) offered to a destination side by side, "
+        "with RM price, CO2e, and the RM cost per tonne of CO2e avoided.",
+        compare_transport_modes,
+        QuoteRequest,
+    ),
+    ToolSpec(
+        "forecast_container_volume",
+        "Forecast daily container volume (TEU) for a commodity over the next N days using the "
+        "trained LightGBM model. Use for fleet and warehouse capacity planning.",
+        forecast_container_volume,
         ForecastArgs,
     ),
     ToolSpec(
-        "calculate_shipping_emissions",
-        "Calculate shipping carbon emissions (kg CO2e) for a shipment given distance (km), "
-        "weight (kg) and transport mode; also compares all modes.",
-        calculate_shipping_emissions,
-        EmissionArgs,
+        "estimate_haulage_spend",
+        "Project haulage cost, revenue, diesel and CO2e in RM for a commodity over the next N "
+        "days by combining the volume forecast with the rate card.",
+        estimate_haulage_spend,
+        SpendArgs,
     ),
     ToolSpec(
-        "search_esg_documents",
-        "Search company ESG, sustainability and supply chain policy documents (PDFs). Use for "
-        "targets, rules, supplier requirements, compliance and policy questions.",
-        search_esg_documents,
+        "get_volume_summary",
+        "Summarise historical container volumes (total TEU, daily and weekly averages, peak "
+        "day), optionally filtered by commodity and date range.",
+        get_volume_summary,
+        VolumeSummaryArgs,
+    ),
+    ToolSpec(
+        "search_operations_documents",
+        "Search the company operations manual: customs forms (K1/K2/K8), dangerous-goods "
+        "chemicals, palm oil, plastics, haulage rules, demurrage/detention, warehousing, "
+        "pricing policy and ESG commitments.",
+        search_operations_documents,
         DocumentSearchArgs,
     ),
     ToolSpec(
-        "get_sales_summary",
-        "Summarise historical sales (total, daily average, peak day) optionally filtered by "
-        "SKU and date range.",
-        get_sales_summary,
-        SalesSummaryArgs,
+        "calculate_shipping_emissions",
+        "Generic CO2e estimate (kg) for any shipment from distance, weight and mode "
+        "(truck, rail, sea, air) using tonne-km factors.",
+        calculate_shipping_emissions,
+        EmissionArgs,
     ),
 ]
 TOOLS_BY_NAME = {spec.name: spec for spec in TOOL_SPECS}
@@ -134,15 +209,16 @@ class ToolRecorder:
 
     def run(self, name: str, **kwargs: Any) -> Any:
         spec = TOOLS_BY_NAME[name]
-        args = spec.args_schema(**kwargs).model_dump()
-        try:
+        args: dict[str, Any] = dict(kwargs)
+        try:  # pydantic ValidationError is a ValueError: bad arguments come back as an error
+            args = spec.args_schema(**kwargs).model_dump()
             output = spec.fn(**args)
         except (ValueError, KeyError, LookupError, RuntimeError) as exc:
             output = {"error": str(exc).strip("'\"")}
         self.calls.append(
             ToolCall(name=name, arguments=json.loads(json.dumps(args, default=str)), output=output)
         )
-        if name == "search_esg_documents" and isinstance(output, list):
+        if name == "search_operations_documents" and isinstance(output, list):
             self.sources.extend(Source(**s) for s in output)
         return output
 

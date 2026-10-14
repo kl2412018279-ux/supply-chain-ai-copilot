@@ -21,16 +21,18 @@ def test_miss_for_unrelated_question(embedder):
     assert cache.lookup("Forecast demand for the laptop stand") is None
 
 
-def test_different_sku_or_number_never_hits(embedder):
+def test_different_entity_or_number_never_hits(embedder):
     cache = _cache(embedder, threshold=0.5)
-    cache.store("Forecast demand for SKU-101 for 14 days", {"answer": "650"})
-    assert cache.lookup("Forecast demand for SKU-102 for 14 days") is None
-    assert cache.lookup("Forecast demand for SKU-101 for 30 days") is None
-    assert cache.lookup("forecast demand for sku 101 for 14 days") is not None
+    cache.store("Quote a 40ft palm oil container to Penang", {"answer": "RM4,000"})
+    assert cache.lookup("Quote a 40ft palm oil container to Ipoh") is None
+    assert cache.lookup("Quote a 20ft palm oil container to Penang") is None
+    assert cache.lookup("Quote a 40ft chemicals container to Penang") is None
+    assert cache.lookup("quote a 40ft CPO container to prai") is not None  # same entities
 
 
 def test_entity_fingerprint():
-    assert entity_fingerprint("Ship 500 kg 300km for SKU_104") == "300|500|sku-104"
+    fp = entity_fingerprint("Ship 500 kg of resin 300km to KL by rail")
+    assert fp == "300|500|cargo:plastics|dest:kuala-lumpur|rail"
     assert entity_fingerprint("no numbers") == ""
 
 

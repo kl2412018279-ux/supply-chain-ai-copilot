@@ -4,9 +4,9 @@ A question is embedded and compared (cosine similarity) against previously answe
 questions; above ``threshold`` the stored answer is returned without an LLM call.
 Backends: Redis (shared across API replicas, TTL-based expiry) or in-process memory.
 
-Paraphrases embed close together, but so do "forecast SKU-101" and "forecast SKU-102".
+Paraphrases embed close together, but so do "quote 40ft to Penang" and "quote 40ft to Ipoh".
 To avoid serving a wrong answer, a hit additionally requires the *entity fingerprint*
-(every number and SKU code in the question) to match exactly.
+(every number, destination, commodity and transport mode in the question) to match exactly.
 
 For large caches swap the linear scan for a Redis Stack / RediSearch vector index.
 """
@@ -29,12 +29,47 @@ from src.config import get_settings
 from src.rag.embeddings import Embedder, get_embedder
 
 logger = logging.getLogger(__name__)
-_ENTITY_RE = re.compile(r"sku[-_ ]?\d+|\d+(?:\.\d+)?", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+_WORD_RE = re.compile(r"[a-z]+")
+
+
+@lru_cache
+def _entity_vocabulary() -> dict[str, str]:
+    """Words that change the answer: destinations, commodities, modes and ports."""
+    from src.costing.rates import get_rate_card  # noqa: PLC0415
+    from src.forecasting.data import COMMODITIES, COMMODITY_ALIASES  # noqa: PLC0415
+
+    vocab: dict[str, str] = {}
+    try:
+        for key, dest in get_rate_card().destinations.items():
+            for phrase in [key.replace("-", " "), dest["label"], *dest.get("aliases", [])]:
+                for word in _WORD_RE.findall(phrase.lower()):
+                    vocab[word] = f"dest:{key}"
+    except (OSError, KeyError, ValueError):
+        logger.warning("Rate card unavailable; cache fingerprints ignore destinations.")
+    for commodity in COMMODITIES:
+        for word in _WORD_RE.findall(commodity):
+            vocab[word] = f"cargo:{commodity}"
+    for alias, commodity in COMMODITY_ALIASES.items():
+        if " " not in alias:
+            vocab[alias] = f"cargo:{commodity}"
+    for word in ("truck", "rail", "sea", "air", "westport", "northport"):
+        vocab[word] = word
+    for generic in ("oil", "port", "the", "goods"):  # too ambiguous on their own
+        vocab.pop(generic, None)
+    return vocab
 
 
 def entity_fingerprint(query: str) -> str:
-    """Canonical string of the SKU codes and numbers in a query."""
-    entities = {re.sub(r"[-_ ]", "-", e.lower()) for e in _ENTITY_RE.findall(query)}
+    """Canonical string of the numbers, places, cargo types and modes in a query.
+
+    Two questions only share a cached answer when these all match, so "quote 40ft to
+    Penang" never returns the answer for "quote 40ft to Ipoh".
+    """
+    vocab = _entity_vocabulary()
+    text = query.lower()
+    entities = set(_NUMBER_RE.findall(text))
+    entities |= {vocab[w] for w in _WORD_RE.findall(text) if w in vocab}
     return "|".join(sorted(entities))
 
 

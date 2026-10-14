@@ -1,4 +1,4 @@
-"""Train the LightGBM demand forecasting model.
+"""Train the LightGBM container-volume (TEU) forecasting model.
 
 * Time-based holdout (no leakage): the last ``holdout_days`` are used for validation.
 * Benchmarked against a seasonal-naive baseline (same weekday last week).
@@ -8,7 +8,7 @@
 
 Usage::
 
-    python -m src.forecasting.train --data data/raw/sample_sales.csv --tune --mlflow
+    python -m src.forecasting.train --data data/raw/container_volumes.csv --tune --mlflow
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from src.config import get_settings
-from src.forecasting.data import FEATURES, MIN_HISTORY, build_features, load_sales
+from src.forecasting.data import FEATURES, MIN_HISTORY, build_features, load_volumes
 
 logger = logging.getLogger(__name__)
 
@@ -74,15 +74,15 @@ def _fit(params: dict[str, Any], train: pd.DataFrame, valid: pd.DataFrame) -> lg
     model = lgb.LGBMRegressor(**params)
     # LightGBM >= 4.7 renamed eval_set to eval_X/eval_y; support both.
     if "eval_X" in inspect.signature(model.fit).parameters:
-        eval_kwargs = {"eval_X": (valid[FEATURES],), "eval_y": (valid["sales"],)}
+        eval_kwargs = {"eval_X": (valid[FEATURES],), "eval_y": (valid["teu"],)}
     else:
-        eval_kwargs = {"eval_set": [(valid[FEATURES], valid["sales"])]}
+        eval_kwargs = {"eval_set": [(valid[FEATURES], valid["teu"])]}
     model.fit(
         train[FEATURES],
-        train["sales"],
+        train["teu"],
         **eval_kwargs,
         eval_metric="l1",
-        categorical_feature=["sku_id"],
+        categorical_feature=["commodity_id"],
         callbacks=[lgb.early_stopping(50, verbose=False)],
     )
     return model
@@ -99,7 +99,7 @@ def _mlflow():
 
 
 def train(
-    sales: pd.DataFrame,
+    volumes: pd.DataFrame,
     model_path: str | Path | None = None,
     holdout_days: int = 56,
     tune: bool = False,
@@ -108,8 +108,8 @@ def train(
 ) -> TrainResult:
     """Train, evaluate and persist the forecasting model bundle."""
     model_path = Path(model_path or get_settings().model_path)
-    sku_categories = sorted(sales["sku"].unique())
-    feats = build_features(sales, sku_categories)
+    categories = sorted(volumes["commodity"].unique())
+    feats = build_features(volumes, categories)
 
     cutoff = feats["date"].max() - pd.Timedelta(days=holdout_days)
     train_df, valid_df = feats[feats["date"] <= cutoff], feats[feats["date"] > cutoff]
@@ -131,14 +131,14 @@ def train(
         uri = get_settings().mlflow_tracking_uri
         if uri:
             mlflow.set_tracking_uri(uri)
-        mlflow.set_experiment("demand-forecasting")
+        mlflow.set_experiment("container-volume-forecasting")
         mlflow.start_run(run_name=f"lgbm-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}")
 
     try:
         best: tuple[float, dict[str, Any], lgb.LGBMRegressor] | None = None
         for trial_params in candidates:
             model = _fit(trial_params, train_df, valid_df)
-            trial_metrics = regression_metrics(valid_df["sales"], model.predict(valid_df[FEATURES]))
+            trial_metrics = regression_metrics(valid_df["teu"], model.predict(valid_df[FEATURES]))
             logger.info("trial %s -> %s", _short(trial_params), trial_metrics)
             if mlflow and tune:
                 with mlflow.start_run(nested=True):
@@ -150,23 +150,28 @@ def train(
         assert best is not None
         _, best_params, best_model = best
         valid_pred = np.clip(best_model.predict(valid_df[FEATURES]), 0, None)
-        metrics = regression_metrics(valid_df["sales"], valid_pred)
-        baseline = regression_metrics(valid_df["sales"], valid_df["lag_7"])
+        metrics = regression_metrics(valid_df["teu"], valid_pred)
+        baseline = regression_metrics(valid_df["teu"], valid_df["lag_7"])
 
         # Refit on all data with the tuned number of trees.
         final_params = {**best_params, "n_estimators": max(best_model.best_iteration_ or 100, 50)}
         final_model = lgb.LGBMRegressor(**final_params)
-        final_model.fit(feats[FEATURES], feats["sales"], categorical_feature=["sku_id"])
+        final_model.fit(feats[FEATURES], feats["teu"], categorical_feature=["commodity_id"])
 
         history = {
-            sku: g.sort_values("date")["sales"].to_numpy(dtype=float)[-MIN_HISTORY * 2 :].tolist()
-            for sku, g in sales.groupby("sku")
+            commodity: g.sort_values("date")["teu"]
+            .to_numpy(dtype=float)[-MIN_HISTORY * 2 :]
+            .tolist()
+            for commodity, g in volumes.groupby("commodity")
         }
-        last_dates = {sku: g["date"].max().strftime("%Y-%m-%d") for sku, g in sales.groupby("sku")}
+        last_dates = {
+            commodity: g["date"].max().strftime("%Y-%m-%d")
+            for commodity, g in volumes.groupby("commodity")
+        }
         bundle = {
             "model": final_model,
             "features": FEATURES,
-            "sku_categories": sku_categories,
+            "categories": categories,
             "history": history,
             "last_dates": last_dates,
             "metrics": metrics,
@@ -199,8 +204,8 @@ def _short(params: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     settings = get_settings()
-    parser = argparse.ArgumentParser(description="Train the LightGBM demand forecaster.")
-    parser.add_argument("--data", default=str(settings.sales_csv_path))
+    parser = argparse.ArgumentParser(description="Train the LightGBM container-volume forecaster.")
+    parser.add_argument("--data", default=str(settings.volumes_csv_path))
     parser.add_argument("--out", default=str(settings.model_path))
     parser.add_argument("--holdout-days", type=int, default=56)
     parser.add_argument("--tune", action="store_true", help="run a small grid search")
@@ -208,7 +213,7 @@ def main() -> None:
     args = parser.parse_args()
 
     result = train(
-        load_sales(args.data),
+        load_volumes(args.data),
         model_path=args.out,
         holdout_days=args.holdout_days,
         tune=args.tune,

@@ -30,22 +30,24 @@ os.environ.update(
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SAMPLE_PDF = ROOT / "data" / "raw" / "esg_policy.pdf"
+SAMPLE_PDF = ROOT / "data" / "raw" / "operations_manual.pdf"
 
 
 @pytest.fixture(scope="session")
-def sales_df():
+def volumes_df():
     from src.forecasting.data import generate_sample_data
 
-    return generate_sample_data(skus=("SKU-101", "SKU-102", "SKU-103"), periods=300)
+    return generate_sample_data(
+        commodities=("chemicals", "palm-oil", "plastics"), start="2025-06-01", end="2026-03-31"
+    )
 
 
 @pytest.fixture(scope="session")
-def trained_model(sales_df):
+def trained_model(volumes_df):
     from src.config import get_settings
     from src.forecasting.train import train
 
-    return train(sales_df, model_path=get_settings().model_path, holdout_days=28)
+    return train(volumes_df, model_path=get_settings().model_path, holdout_days=28)
 
 
 @pytest.fixture(scope="session")
