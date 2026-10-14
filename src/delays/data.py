@@ -1,7 +1,8 @@
 """Synthetic shipment history with delay outcomes.
 
 Delay (hours beyond the promised delivery) is driven by the factors ops teams name:
-port congestion (berth occupancy), north-east monsoon for sea legs (Nov-Feb), the
+port congestion (berth occupancy), daily rain at the destination (heavier in the
+north-east monsoon for the east coast and Borneo), the monsoon season for sea legs, the
 week around Chinese New Year / Hari Raya, customs inspection, dangerous goods,
 weekend arrival, distance and the carrier's own reliability, plus noise.
 Risk classes: Low < 12 h, Medium 12-48 h, High > 48 h.
@@ -27,7 +28,7 @@ COMMODITIES = ["chemicals", "palm-oil", "plastics", "general"]
 RISK_LABELS = ["Low", "Medium", "High"]
 FEATURES_NUMERIC = [
     "distance_km", "congestion", "monsoon", "days_to_holiday", "customs_inspection",
-    "dangerous_goods", "weekend_arrival", "containers",
+    "dangerous_goods", "weekend_arrival", "containers", "rain_mm",
 ]  # fmt: skip
 FEATURES_CATEGORICAL = ["mode", "carrier", "port", "commodity"]
 
@@ -93,12 +94,27 @@ def generate_shipments(
                 }
             )
     df = pd.DataFrame(rows)
+    # Daily rain per region (same weather for every shipment to that region that day).
+    from src.delays.weather import CLIMATOLOGY_MM, region_of  # noqa: PLC0415
+
+    rain = {
+        region: pd.Series(
+            np.round(rng.gamma(0.6, np.array([means[d.month - 1] for d in dates]) / 0.6), 1),
+            index=dates.strftime("%Y-%m-%d"),
+        )
+        for region, means in CLIMATOLOGY_MM.items()
+    }
+    df["rain_mm"] = [
+        rain[region_of(dest)][day] for dest, day in zip(df["destination"], df["date"], strict=True)
+    ]
     reliability = df["carrier"].map({c: p[0] for c, p in PROFILES.items()})
     base = df["mode"].map({"truck": 0.0, "rail": 4.0, "sea": 16.0})
     delay = (
         base
         + 160 * np.clip(df["congestion"] - 0.76, 0, None)  # queues explode near capacity
-        + df["monsoon"] * np.where(df["mode"] == "sea", 30, 1)
+        + df["monsoon"] * np.where(df["mode"] == "sea", 18, 1)
+        + df["rain_mm"] * df["mode"].map({"truck": 0.25, "rail": 0.15, "sea": 0.45})
+        + np.where(df["rain_mm"] > 40, 6, 0)  # flash floods / port stoppages
         + np.where(df["days_to_holiday"] <= 3, 22, np.where(df["days_to_holiday"] <= 7, 7, 0))
         + df["customs_inspection"] * rng.uniform(18, 45, len(df))
         + df["dangerous_goods"] * 4

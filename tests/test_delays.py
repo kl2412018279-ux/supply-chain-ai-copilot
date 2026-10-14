@@ -89,3 +89,31 @@ def test_upcoming_manifest_is_scored(model):
     assert scored["eta"].min() == "2026-12-01" and scored["eta"].max() <= "2026-12-07"
     assert {"p_low", "p_medium", "p_high", "risk", "risk_score"} <= set(scored.columns)
     assert "delay_hours" not in scored.columns  # outcomes are not known yet
+
+
+def test_heavy_rain_raises_risk_and_is_explained(model):
+    base = dict(destination="shah-alam", eta="2026-06-10", congestion=0.6)
+    dry = model.predict(DelayInput(**base, rain_mm=0))
+    wet = model.predict(DelayInput(**base, rain_mm=80))
+    score = lambda p: p.probabilities["Medium"] / 2 + p.probabilities["High"]  # noqa: E731
+    assert score(wet) > score(dry)
+    assert wet.weather.source == "entered by user" and wet.weather.rain_mm == 80
+    assert "Heavy rain" in [d.factor for d in wet.drivers]
+
+
+def test_rain_defaults_to_offline_climatology(model):
+    pred = model.predict(DelayInput(destination="kuching", carrier="nusantara", eta="2026-12-10"))
+    assert "offline" in pred.weather.source and pred.weather.rain_mm > 0
+
+
+def test_stale_model_is_detected(model, tmp_path):
+    import joblib
+
+    from src.delays.model import model_is_current
+
+    path = tmp_path / "old.joblib"
+    assert not model_is_current(path)  # missing
+    joblib.dump({**model.bundle, "features": ["congestion"]}, path)
+    assert not model_is_current(path)  # trained before a feature was added
+    joblib.dump(model.bundle, path)
+    assert model_is_current(path)

@@ -23,6 +23,7 @@ from src.agent.copilot import SupplyChainCopilot, get_copilot
 from src.config import get_settings
 from src.costing.quote import Quote, QuoteComparison, QuoteRequest, build_quote, compare_modes
 from src.costing.rates import get_rate_card
+from src.costing.road_routing import with_road_route
 from src.costing.routing import Priorities, RouteRecommendation, recommend
 from src.delays.model import (
     DelayInput,
@@ -65,10 +66,12 @@ def bootstrap() -> None:
 
         logger.info("No model found - training on %s", settings.volumes_csv_path)
         train(load_volumes(settings.volumes_csv_path), settings.model_path)
-    if settings.auto_train and not settings.delay_model_path.exists():
+    from src.delays.model import model_is_current  # noqa: PLC0415
+
+    if settings.auto_train and not model_is_current(settings.delay_model_path):
         from src.delays.model import train as train_delay_model  # noqa: PLC0415
 
-        logger.info("No delay model found - training on the shipment history")
+        logger.info("No current delay model - training on the shipment history")
         train_delay_model()
     if settings.auto_ingest and get_vector_store().count() == 0 and settings.documents_dir.exists():
         logger.info("Vector store empty - ingesting %s", settings.documents_dir)
@@ -207,7 +210,7 @@ def list_commodities(forecaster: DemandForecaster = Depends(forecaster_dep)) -> 
 def quote(req: QuoteRequest) -> Quote:
     """Itemised RM quote (fuel, truck, driver, tolls, port, customs, surcharges, margin) + CO2e."""
     try:
-        return build_quote(req)
+        return build_quote(with_road_route(req)[0])
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
@@ -218,7 +221,7 @@ def quote(req: QuoteRequest) -> Quote:
 def quote_compare(req: QuoteRequest) -> QuoteComparison:
     """Every transport mode offered to the destination, with the RM per tonne CO2e trade-off."""
     try:
-        return compare_modes(req)
+        return compare_modes(with_road_route(req)[0])
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:

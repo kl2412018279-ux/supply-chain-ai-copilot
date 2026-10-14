@@ -438,7 +438,7 @@ class RuleBasedAgent:
         lines = [
             f"**Quote: {out['containers']} x {out['container_size']}ft {out['cargo_type']} "
             f"by {out['mode']}, {out['origin_label']} → {out['destination_label']} "
-            f"({out['distance_km']:,.0f} km)**",
+            f"({out['distance_km']:,.0f} km, {out.get('distance_source', 'rate-card estimate')})**",
             f"**Price: {_rm(out['price_rm'])}** ({per_box} per container; "
             f"cost {_rm(out['cost_rm'])} + {out['margin_pct']:.0f}% margin)",
         ]
@@ -448,6 +448,13 @@ class RuleBasedAgent:
         lines.append("Cost breakdown: " + ", ".join(f"{k} {_rm(v)}" for k, v in totals.items()))
         diesel = f"Diesel ≈ {out['diesel_litres']:,.0f} L · " if out["diesel_litres"] else ""
         lines.append(f"{diesel}**CO2e ≈ {out['co2e_kg']:,.0f} kg**")
+        road = out.get("road_route")
+        if road:
+            via = f" via {', '.join(road['main_roads'])}" if road["main_roads"] else ""
+            lines.append(
+                f"Road route: {road['distance_km']:,.0f} km, "
+                f"≈ {road['drive_hours']:.1f} h drive{via}."
+            )
         lines += [f"⚠️ {w}" for w in out["warnings"]]
         return "\n\n".join(lines)  # blank lines so Markdown renders separate lines
 
@@ -503,6 +510,12 @@ class RuleBasedAgent:
             f"Expected delay ≈ {out['expected_delay_hours']:.0f} h · demurrage exposure ≈ "
             f"{_rm(out['demurrage_exposure_rm'])}.",
         ]
+        weather = out.get("weather")
+        if weather:
+            lines.append(
+                f"Rain at destination on {weather['date']}: {weather['rain_mm']:.0f} mm "
+                f"({weather['source']})."
+            )
         if out["drivers"]:
             lines.append(
                 "Main drivers: "
