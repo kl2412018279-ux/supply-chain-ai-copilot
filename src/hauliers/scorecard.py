@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from src.config import PROJECT_ROOT, get_settings
 from src.costing.rates import get_rate_card
+from src.db import PgConnection
 
 logger = logging.getLogger(__name__)
 
@@ -151,9 +152,7 @@ class DeliveryLog:
     def __init__(self, df: pd.DataFrame | None = None, dsn: str | None = None):
         self._pg = None
         if dsn:
-            import psycopg  # noqa: PLC0415
-
-            self._pg = psycopg.connect(dsn, autocommit=True)
+            self._pg = PgConnection(dsn)
             self._pg.execute(SCHEMA_SQL)
             count = self._pg.execute("SELECT count(*) FROM haulier_deliveries").fetchone()[0]
             if count == 0:

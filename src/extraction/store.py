@@ -10,6 +10,7 @@ from functools import lru_cache
 from typing import Any, Protocol
 
 from src.config import get_settings
+from src.db import PgConnection
 from src.extraction.extract import ShippingDocument
 
 logger = logging.getLogger(__name__)
@@ -64,9 +65,8 @@ class InMemoryDocumentStore:
 
 class PostgresDocumentStore:
     def __init__(self, dsn: str):
-        import psycopg  # noqa: PLC0415
 
-        self._conn = psycopg.connect(dsn, autocommit=True)
+        self._conn = PgConnection(dsn)
         self._conn.execute(SCHEMA_SQL)
         self._lock = threading.Lock()
 
