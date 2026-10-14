@@ -198,6 +198,13 @@ _RECOMMEND_RE = re.compile(
     r"|optimal|trade-?offs?|carriers?)\b",
     re.I,
 )
+_FREETIME_RE = re.compile(
+    r"\b(demurrage|detention|free[- ]time|last free day|storage charges?|empt(?:y|ies) return)\b",
+    re.I,
+)
+_MARGIN_RE = re.compile(
+    r"\b(margins?|profit\w*|leak\w*|loss[- ]making|losing money|money lost)\b", re.I
+)
 _DELAY_RE = re.compile(r"\b(delay(?:s|ed)?|late|eta|arrive on time|risk)\b", re.I)
 _DATE_RE = re.compile(r"\b(20\d\d-\d\d-\d\d)\b")
 _MONTHS = {
@@ -314,7 +321,12 @@ class RuleBasedAgent:
                 r"\b(scor\w*|rat\w*|grade|complian\w*|perform\w*|reliab\w*)\b", query, re.I
             )
         )
-        if (_SCORECARD_RE.search(query) or asks_about_carrier) and not (
+        if _FREETIME_RE.search(query) and not destination:
+            parts.append(self._format_free_time(recorder.run("get_free_time_status")))
+        elif _MARGIN_RE.search(query) and not (destination and _QUOTE_RE.search(query)):
+            days = _parse_horizon(query, 90)
+            parts.append(self._format_margin(recorder.run("get_margin_leakage", days=days)))
+        elif (_SCORECARD_RE.search(query) or asks_about_carrier) and not (
             destination and _RECOMMEND_RE.search(query)
         ):
             out = recorder.run("get_haulier_scorecard", haulier=carrier)
@@ -414,9 +426,56 @@ class RuleBasedAgent:
             "- *Projected haulage spend for palm oil next month*\n"
             "- *Which carrier is best for chemicals to Penang? Cheapest please*\n"
             "- *Will a shipment to Kuching in December be delayed?*\n"
+            "- *Which containers are about to incur demurrage?*\n"
+            "- *Where are we losing margin?*\n"
             "- *Show the haulier scorecard*\n"
             "- *What documents do I need to clear a chemical import?*"
         )
+
+    @staticmethod
+    def _format_free_time(out: dict[str, Any]) -> str:
+        if "error" in out:
+            return f"Could not load the free-time board: {out['error']}"
+        lines = [
+            f"**Free-time clock ({out['as_of']}):** {out['overdue']} of {out['containers']} "
+            f"containers are past their last free day, accruing {_rm(out['accruing_rm_per_day'])}"
+            f" per day; {out['due_within_48h']} more run out within 48 h.",
+            f"Charges accrued so far {_rm(out['accrued_rm'])}; at the planned moves "
+            f"**{_rm(out['projected_rm'])}**.",
+        ]
+        bullets = []
+        for c in out["top"]:
+            when = (
+                f"{-c['days_left']} day(s) over" if c["days_left"] < 0
+                else "last free day today" if c["days_left"] == 0
+                else f"{c['days_left']} day(s) left"
+            )  # fmt: skip
+            bullets.append(
+                f"- **{c['container']}** ({c['size']}ft, {c['customer']}): {c['status'].lower()}, "
+                f"{c['clock'].lower()} {when}, {_rm(c['projected_rm'])} at planned move. "
+                f"Next: {c['action'].lower()}."
+            )
+        return "\n\n".join([*lines, "Most urgent:\n" + "\n".join(bullets)])
+
+    @staticmethod
+    def _format_margin(out: dict[str, Any]) -> str:
+        if "error" in out:
+            return f"Could not load job margins: {out['error']}"
+        leaks = sorted(out["leakage_by_reason"].items(), key=lambda kv: -kv[1])
+        lines = [
+            f"**Margin, {out['period']}** ({out['jobs']:,} jobs): **{out['margin_pct']:.1f}%** "
+            f"actual vs {out['planned_margin_pct']:.1f}% quoted on {_rm(out['revenue_rm'])} "
+            f"revenue. Leaks cost {_rm(out['leakage_rm'])}; {out['loss_making_jobs']} jobs lost "
+            "money.",
+            "Biggest leaks: " + "; ".join(f"{k.lower()} {_rm(v)}" for k, v in leaks[:3]) + ".",
+            "Lowest-margin customers: "
+            + "; ".join(f"{c['customer']} {c['margin_pct']:.1f}%" for c in out["by_customer"][:3])
+            + ".",
+            "Weakest lanes: "
+            + "; ".join(f"{w['lane']} {w['margin_pct']:.1f}%" for w in out["worst_lanes"][:3])
+            + ".",
+        ]
+        return "\n\n".join(lines)
 
     @staticmethod
     def _format_quote(out: dict[str, Any]) -> str:

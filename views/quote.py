@@ -88,11 +88,10 @@ with result:
     k1.metric(
         "Quoted price", rm(q.price_rm, 0),
         delta=f"{rm(delta, 0)} vs rate card" if scenario and abs(delta) >= 0.5 else None,
-        delta_color="inverse",
-    )  # fmt: skip
-    k2.metric("Per container", rm(q.price_per_container_rm, 0))
-    k3.metric("Cost", rm(q.cost_rm, 0), help=f"Diesel ≈ {q.diesel_litres:,.0f} L")
-    k4.metric("Margin", rm(q.margin_rm, 0), help=f"{q.margin_pct:.0f}% on cost")
+        delta_color="inverse", border=True)  # fmt: skip
+    k2.metric("Per container", rm(q.price_per_container_rm, 0), border=True)
+    k3.metric("Cost", rm(q.cost_rm, 0), help=f"Diesel ≈ {q.diesel_litres:,.0f} L", border=True)
+    k4.metric("Margin", rm(q.margin_rm, 0), help=f"{q.margin_pct:.0f}% on cost", border=True)
     st.caption(
         f"{q.containers} × {q.container_size}ft {base_rates.cargo_types[cargo]['label'].lower()} · "
         f"{q.origin_label} → {q.destination_label} · {q.distance_km:,.0f} km by {q.mode.value} "

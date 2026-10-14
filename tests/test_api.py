@@ -185,3 +185,16 @@ def test_document_extraction_and_records(client):
     numbers = [row["document_number"] for row in client.get("/documents/records").json()]
     assert "SPLU2610045" in numbers
     assert client.post("/documents/extract", files={"file": ("x.txt", b"hi")}).status_code == 415
+
+
+def test_operations_endpoints(client):
+    r = client.get("/operations/free-time", params={"top": 3})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["top"]) == 3 and body["containers"] >= body["overdue"]
+
+    r = client.get("/operations/margin", params={"days": 30})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["margin_pct"] < body["planned_margin_pct"]
+    assert client.get("/operations/margin", params={"days": 3}).status_code == 422

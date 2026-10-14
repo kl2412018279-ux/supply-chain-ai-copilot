@@ -166,6 +166,29 @@ def get_haulier_scorecard(haulier: str | None = None) -> dict[str, Any] | list[d
     ]
 
 
+class FreeTimeArgs(BaseModel):
+    top: int = Field(default=8, ge=1, le=30, description="How many urgent containers to list")
+
+
+class MarginArgs(BaseModel):
+    days: int = Field(default=90, ge=7, le=365, description="Look-back window in days")
+
+
+def get_free_time_status(top: int = 8) -> dict[str, Any]:
+    from src.operations.freetime import generate_board, summarise  # noqa: PLC0415
+
+    today = date.today()
+    return summarise(generate_board(today), today, top=top).model_dump(mode="json")
+
+
+def get_margin_leakage(days: int = 90) -> dict[str, Any]:
+    from src.operations.margin import margin_summary  # noqa: PLC0415
+
+    out = margin_summary(days).model_dump(mode="json")
+    out["by_customer"] = out["by_customer"][:4]
+    return out
+
+
 def search_operations_documents(query: str, k: int = 4) -> list[dict[str, Any]]:
     results = get_retriever().search(query, k=k)
     return [
@@ -229,6 +252,22 @@ TOOL_SPECS: list[ToolSpec] = [
         "insurance, ISO) from their policy documents, composite grade (A-D) and ranking.",
         get_haulier_scorecard,
         ScorecardArgs,
+    ),
+    ToolSpec(
+        "get_free_time_status",
+        "Live import containers on the free-time clock: which are past or near their last free "
+        "day, demurrage / port storage / detention accrued and at the planned move (RM), and "
+        "the next action for each (book haulier, chase customs, return empty).",
+        get_free_time_status,
+        FreeTimeArgs,
+    ),
+    ToolSpec(
+        "get_margin_leakage",
+        "Job profitability over the last N days: quoted vs actual gross margin, RM lost to "
+        "each leak (unbilled waiting time, absorbed demurrage/detention, late penalties, "
+        "damage claims, diesel above quote), margin by customer and the weakest lanes.",
+        get_margin_leakage,
+        MarginArgs,
     ),
     ToolSpec(
         "forecast_container_volume",
