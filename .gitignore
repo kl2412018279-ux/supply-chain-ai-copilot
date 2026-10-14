@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+mlruns/
+mlflow.db
+models/*
+!models/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+.ipynb_checkpoints/
+*.egg-info/
