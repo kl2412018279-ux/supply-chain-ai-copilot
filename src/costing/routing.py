@@ -69,10 +69,20 @@ class RouteRecommendation(BaseModel):
     explanation: str
 
 
-def transit_days(rates: RateCard, destination: str, mode: Mode, carrier: dict[str, Any]) -> int:
+def transit_days(
+    rates: RateCard,
+    destination: str,
+    mode: Mode,
+    carrier: dict[str, Any],
+    road_drive_hours: float | None = None,
+) -> int:
     t = rates.data["transit"]
     km = rates.destinations[destination]["km"]
-    if mode is Mode.truck:
+    if mode is Mode.truck and road_drive_hours:
+        # Real drive time (routing API) + port turnaround, within one driver shift per day.
+        hours = road_drive_hours + rates.value("truck", "port_turnaround_hours")
+        days = math.ceil(hours / rates.value("truck", "shift_hours"))
+    elif mode is Mode.truck:
         days = math.ceil(km / t["truck_shift_km_per_day"])
     elif mode is Mode.rail:
         days = t["rail_terminal_dwell_days"] + math.ceil(km / t["rail_km_per_day"])
@@ -102,6 +112,9 @@ def recommend(
         from src.hauliers.scorecard import on_time_rates  # noqa: PLC0415
 
         on_time = on_time_rates()
+    from src.costing.road_routing import with_road_route  # noqa: PLC0415
+
+    req, _ = with_road_route(req, rates)
     dest_key = rates.resolve_destination(req.destination)
     dest = rates.destinations[dest_key]
     carriers = {k: v for k, v in rates.data["carriers"].items() if not k.startswith("_")}
@@ -124,7 +137,9 @@ def recommend(
                     "cost_rm": round(cost, 2),
                     "price_rm": round(cost * (1 + base.margin_pct / 100), 2),
                     "co2e_kg": round(base.co2e_kg * carrier["co2_factor"], 1),
-                    "transit_days": transit_days(rates, dest_key, mode, carrier),
+                    "transit_days": transit_days(
+                        rates, dest_key, mode, carrier, req.road_drive_hours
+                    ),
                     "on_time_rate": round(on_time.get(key, 0.9), 4),
                 }
             )

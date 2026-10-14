@@ -27,6 +27,8 @@ os.environ.update(
         "MLFLOW_TRACKING_URI": "",
         "AUTO_TRAIN": "false",
         "AUTO_INGEST": "false",
+        "ORS_API_KEY": "",
+        "WEATHER_ENABLED": "false",
     }
 )
 

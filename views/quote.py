@@ -9,6 +9,7 @@ import streamlit as st
 
 from src.costing.quote import Mode, QuoteRequest, build_quote, compare_modes
 from src.costing.rates import get_rate_card
+from src.costing.road_routing import main_roads, with_road_route
 from views.common import BLUE, MUTED, ORANGE, page_header, rm, show, style
 
 base_rates = get_rate_card()
@@ -69,6 +70,10 @@ req = QuoteRequest(
     containers=int(containers), cargo_weight_kg=float(weight), mode=Mode(mode),
     customs_clearance=customs, warehouse_pallets=int(pallets), warehouse_days=int(days),
 )  # fmt: skip
+road = None
+if req.mode is Mode.truck:
+    with st.spinner("Routing by road…"):
+        req, road = with_road_route(req, base_rates)
 q = build_quote(req, rates)
 baseline = build_quote(req, base_rates)
 scenario = diesel != base_diesel or margin != base_margin
@@ -90,7 +95,8 @@ with result:
     k4.metric("CO2e", f"{q.co2e_kg:,.0f} kg", help=f"Diesel ≈ {q.diesel_litres:,.0f} L")
     st.caption(
         f"{q.containers} × {q.container_size}ft {base_rates.cargo_types[cargo]['label'].lower()} · "
-        f"{q.origin_label} → {q.destination_label} · {q.distance_km:,.0f} km by {q.mode.value}"
+        f"{q.origin_label} → {q.destination_label} · {q.distance_km:,.0f} km by {q.mode.value} "
+        f"({q.distance_source})"
     )
 
     view = st.segmented_control(
@@ -140,10 +146,15 @@ with result:
                 text=[dests[k]["label"] for k in others], hovertemplate="%{text}<extra></extra>",
             )
         )  # fmt: skip
+        path = (
+            road.geometry
+            if road and road.geometry
+            else [(o["lat"], o["lon"]), (d["lat"], d["lon"])]
+        )
         fig.add_trace(
             go.Scattermap(
-                lat=[o["lat"], d["lat"]], lon=[o["lon"], d["lon"]], mode="lines",
-                line=dict(width=3, color=BLUE), hoverinfo="skip", name="Route",
+                lat=[p[0] for p in path], lon=[p[1] for p in path], mode="lines",
+                line=dict(width=4 if road else 3, color=BLUE), hoverinfo="skip", name="Route",
             )
         )  # fmt: skip
         fig.add_trace(
@@ -166,11 +177,36 @@ with result:
             height=440, margin=dict(l=0, r=0, t=0, b=0), showlegend=False,
         )  # fmt: skip
         show(fig)
-        st.caption(
-            f"Straight-line view; quoted on {q.distance_km:,.0f} km by {q.mode.value}"
-            + (" (truck round trip, empty return)." if q.mode is Mode.truck else ".")
-            + " Scroll to zoom, drag to pan."
-        )
+        if road:
+            roads = main_roads(road)
+            st.caption(
+                f"Truck road route from OpenRouteService: {road.distance_km:,.0f} km, about "
+                f"{road.drive_hours:.1f} h driving each way"
+                + (f", mainly via {', '.join(roads)}" if roads else "")
+                + ". Quoted as a round trip with an empty return. Scroll to zoom, drag to pan."
+            )
+            with st.expander(f"Turn-by-turn directions ({len(road.steps)} steps)"):
+                st.dataframe(
+                    pd.DataFrame([s.model_dump() for s in road.steps]),
+                    hide_index=True, width="stretch",
+                    column_config={
+                        "instruction": st.column_config.TextColumn("Instruction"),
+                        "road": st.column_config.TextColumn("Road"),
+                        "distance_km": st.column_config.NumberColumn("km", format="%.1f"),
+                        "duration_min": st.column_config.NumberColumn("min", format="%.0f"),
+                    },
+                )  # fmt: skip
+        else:
+            st.caption(
+                f"Straight-line view; quoted on {q.distance_km:,.0f} km by {q.mode.value}"
+                + (" (truck round trip, empty return)." if q.mode is Mode.truck else ".")
+                + " Scroll to zoom, drag to pan."
+            )
+            if q.mode is Mode.truck:
+                st.caption(
+                    "For the real road, turn-by-turn directions and road distance in the quote, "
+                    "add a free OpenRouteService key as `ORS_API_KEY` in the app secrets."
+                )
 
     elif view == "Modes":
         if len(modes) < 2:

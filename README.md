@@ -23,18 +23,18 @@ An AI copilot for a **Malaysian third-party logistics (3PL) provider at Port Kla
 
 | Question an ops team asks | What the copilot does |
 |---|---|
-| *"Quote 2 × 40ft palm oil from Westport to Pasir Gudang"* | Builds an **itemised quote in RM**: diesel, truck maintenance, driver, tolls, Westports handling, customs (K1/K2), cargo surcharges, warehousing and margin. Shows **CO2e computed from the same diesel litres**. |
+| *"Quote 2 × 40ft palm oil from Westport to Pasir Gudang"* | Builds an **itemised quote in RM** on the **real truck road distance** (OpenRouteService, with the road drawn on the map and turn-by-turn directions): diesel, truck maintenance, driver, tolls, Westports handling, customs (K1/K2), cargo surcharges, warehousing and margin. Shows **CO2e computed from the same diesel litres**. |
 | *"Compare truck vs rail for chemicals to Penang"* | Prices every transport mode side by side and reports the **RM cost per tonne of CO2e avoided**. |
 | *"How many palm oil containers next month?"* | **LightGBM TEU forecast** per commodity, with Chinese New Year and Hari Raya dips and the Sep–Nov palm-oil harvest peak. |
 | *"What's our projected haulage spend for chemicals?"* | Forecast TEU × rate card → **projected cost, revenue, diesel and CO2e in RM**. |
 | *"Which carrier is best for chemicals to Penang? Cheapest please"* | **Route & carrier planner**: ranks every mode × carrier on price, transit days, CO2e and *historical* on-time rate with your priority weights, flags Pareto-dominated options and explains the trade-off (*"1 day slower, 42% cheaper, 71% less CO2e"*). |
-| *"Will a chemicals shipment to Kuching in December be delayed?"* | **Delay-risk classifier** (Low / Medium / High) with probabilities, the drivers behind the prediction (monsoon, congestion, customs inspection, carrier…) and expected **demurrage exposure in RM**. |
+| *"Will a chemicals shipment to Kuching in December be delayed?"* | **Delay-risk classifier** (Low / Medium / High) with probabilities, the drivers behind the prediction (monsoon, **live rainfall at the destination from Open-Meteo**, congestion, customs inspection, carrier…) and expected **demurrage exposure in RM**. |
 | *(upload a Bill of Lading PDF)* | **Document intake**: extracts B/L and invoice fields into a Pydantic record, validates ISO 6346 container check digits, HS codes and the 25 t weight limit, turns the document into a haulage quote, saves it to the database after review. |
 | *"Show the haulier scorecard"* / *"How does Cempaka score on ESG?"* | **Haulier scorecard**: on-time, damage and claims from SQL over the delivery log, plus ESG criteria evidenced by quoting each haulier's own policy document; composite grade A–D. |
 | *"What documents do I need to clear a chemical import?"* | **Hybrid RAG** over the operations manual (customs forms, dangerous goods, palm oil, demurrage, warehousing), with page citations. |
 | *"Ignore previous instructions…"* | 🛡️ Blocked by input guardrails before any tokens are spent. |
 
-It runs **fully offline with no API key**. Without an LLM configured, a deterministic rule-based agent calls the same tools. It also falls back to that agent automatically if the LLM provider fails.
+It runs **fully offline with no API key**. Road routing and live weather are optional: without an `ORS_API_KEY` quotes use the rate card's distance table, and without network access the delay model uses typical rainfall for the month. Without an LLM configured, a deterministic rule-based agent calls the same tools. It also falls back to that agent automatically if the LLM provider fails.
 
 ---
 
@@ -122,7 +122,7 @@ Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 
 | 3 | **AI safety & guardrails** | Pydantic schemas for every tool argument and response, injection and off-topic filters, output redaction, no text-to-SQL. `src/guardrails/` |
 | 4 | **Semantic caching** | Redis-backed (in-memory fallback), with TTL, entity fingerprinting, invalidation on document changes, and no caching of fallback answers. `src/cache/` |
 | 5 | **Resilience** | If the LLM provider fails (retired model, outage, rate limit), the rule-based agent answers with the same tools. Every external dependency (Postgres, Redis, LLM, embedding model) is optional. |
-| 6 | **Testing & CI/CD** | 175 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
+| 6 | **Testing & CI/CD** | 192 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
 
 ---
 
@@ -141,11 +141,13 @@ That is **27% lower MAE** than the baseline. R² is moderate because daily count
 
 | Model | Accuracy | Macro F1 | High-risk recall |
 |---|---|---|---|
-| Always the majority class | 0.647 | 0.262 | 0.000 |
-| Majority class per transport mode | 0.768 | 0.461 | 0.000 |
-| **Random forest** (congestion, monsoon, holiday, inspection, carrier…) | **0.883** | **0.777** | **0.625** |
+| Always the majority class | 0.627 | 0.257 | 0.000 |
+| Majority class per transport mode | 0.726 | 0.454 | 0.000 |
+| **Random forest** (congestion, monsoon, rainfall, holiday, inspection, carrier…) | **0.878** | **0.788** | **0.810** |
 
-Both baselines miss every high-risk shipment, which is the class that costs money. The model catches about 5 in 8 of them.
+Both baselines miss every high-risk shipment, which is the class that costs money. The model catches about 4 in 5 of them.
+
+**Where the inputs come from.** The history is synthetic (a real deployment would train on the company's own TMS records). At prediction time, rainfall on the ETA date comes from [Open-Meteo](https://open-meteo.com) (free, no key): the forecast for the next 15 days, observed archive data for past dates, and the same date last year for dates further ahead. If the lookup fails, the model uses typical rainfall for that month and region, the same climatology the synthetic history was generated from. Berth occupancy defaults to a seasonal estimate and can be set by hand. Open-Meteo's free tier is for non-commercial use.
 
 **Retrieval** (`python -m src.rag.evaluate`: 20 labelled questions over the operations manual, searched across the whole library, including the haulier policies):
 
@@ -190,6 +192,10 @@ docker compose up -d --build
 | MLflow UI (`docker compose --profile mlops up -d`) | http://localhost:5000 |
 
 On first start the API trains the forecaster, loads the volumes into Postgres and indexes the documents in `data/raw/`.
+
+### Road routing (optional, free)
+
+Truck quotes use the rate card's approximate distance table by default. For the real road, sign up at [openrouteservice.org](https://openrouteservice.org/dev/#/signup) (free tier: 2,000 route requests a day) and set `ORS_API_KEY`. Quotes then use the actual road distance and drive time (heavy-goods-vehicle profile), the Route view draws the road and lists turn-by-turn directions, and the copilot names the main roads. Routes are cached per origin and destination, and any API error falls back to the distance table.
 
 ### LLM providers (all have $0 options)
 
@@ -241,7 +247,7 @@ curl -s localhost:8000/quote -H 'content-type: application/json' \
 
 - **`data/raw/container_volumes.csv`**: synthetic daily TEU per commodity (chemicals, palm oil, plastics, general), January 2024 to September 2026. It includes weekday patterns, holiday dips, the palm-oil harvest peak, year-end peaks and growth. Regenerate it with `python -m src.forecasting.data`. Real exports work too: any CSV with a date, a commodity/series column and a TEU/volume column.
 - **`data/raw/operations_manual.pdf`**: a **fictional** 10-section operations manual covering customs (K1/K2/K8, uCustoms), dangerous goods, palm oil (heating, MSPO, EUDR), plastics, haulage, demurrage/detention, warehousing, pricing and ESG. It is generated from `scripts/sample_docs/operations_manual.md`. Its rules are simplified examples, so verify real requirements with JKDM and the port operators.
-- **`data/raw/shipment_history.csv`**: 5,142 synthetic shipments with delay outcomes. Delays are driven by congestion, monsoon, holiday weeks, customs inspection, dangerous goods, weekend arrival, distance and carrier reliability. Regenerate it with `python -m src.delays.model --regenerate`.
+- **`data/raw/shipment_history.csv`**: 5,142 synthetic shipments with delay outcomes. Delays are driven by congestion, monsoon, daily rainfall at the destination, holiday weeks, customs inspection, dangerous goods, weekend arrival, distance and carrier reliability. Regenerate it with `python -m src.delays.model --regenerate`.
 - **`data/raw/haulier_deliveries.csv`** and **`data/raw/haulier_esg_*.md`**: synthetic delivery logs and **fictional** policy documents for six fictional carriers. The policies range from strong to weak, so the scorecard has something real to separate.
 - **`data/samples/*.pdf`**: fictional Bills of Lading and a commercial invoice (`scripts/make_sample_shipping_docs.py`). `bl_chemicals_errors.pdf` deliberately contains a bad container check digit and an overweight container.
 - **`data/reference/rates.json`**: the rate card described above, plus the fictional carriers, transit assumptions and demurrage rates.
@@ -261,6 +267,7 @@ docker compose up -d postgres redis && make test-all   # + pgvector/Redis integr
 
   ```toml
   GROQ_API_KEY = "gsk_..."
+  ORS_API_KEY = "..."             # optional: real truck routes (free at openrouteservice.org/dev/#/signup)
   EMBEDDING_BACKEND = "hashing"   # keeps memory under the free 1 GB limit
   RERANKER_BACKEND = "lexical"
   ```
@@ -278,8 +285,8 @@ supply-chain-ai-copilot/
 │   ├── raw/                     # container_volumes.csv, operations_manual.pdf
 │   └── reference/rates.json     # RM rate card (example values + sources)
 ├── src/
-│   ├── costing/                 # rate card loader, quote engine, mode comparison, route & carrier planner
-│   ├── delays/                  # shipment history generator, delay-risk classifier + explanations
+│   ├── costing/                 # rate card loader, quote engine, mode comparison, route & carrier planner, OpenRouteService road routing
+│   ├── delays/                  # shipment history generator, delay-risk classifier + explanations, Open-Meteo rainfall
 │   ├── extraction/              # B/L & invoice extraction, ISO 6346 validation, document store
 │   ├── hauliers/                # delivery logs, SQL scorecard, ESG evidence
 │   ├── forecasting/             # TEU data/features, train (MLflow), predict, volume repo, CO2 calc
@@ -291,7 +298,7 @@ supply-chain-ai-copilot/
 │   ├── config.py, observability.py
 ├── notebooks/                   # 01 volume exploration, 02 training + RM projection
 ├── docker/, docker-compose.yml, Dockerfile, n8n/, scripts/
-└── tests/                       # pytest suite (175 tests)
+└── tests/                       # pytest suite (192 tests)
 ```
 
 ## Roadmap

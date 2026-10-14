@@ -23,6 +23,7 @@ from src.agent.copilot import SupplyChainCopilot, get_copilot
 from src.config import get_settings
 from src.costing.quote import Quote, QuoteComparison, QuoteRequest, build_quote, compare_modes
 from src.costing.rates import get_rate_card
+from src.costing.road_routing import with_road_route
 from src.costing.routing import Priorities, RouteRecommendation, recommend
 from src.delays.model import (
     DelayInput,
@@ -207,7 +208,7 @@ def list_commodities(forecaster: DemandForecaster = Depends(forecaster_dep)) -> 
 def quote(req: QuoteRequest) -> Quote:
     """Itemised RM quote (fuel, truck, driver, tolls, port, customs, surcharges, margin) + CO2e."""
     try:
-        return build_quote(req)
+        return build_quote(with_road_route(req)[0])
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
@@ -218,7 +219,7 @@ def quote(req: QuoteRequest) -> Quote:
 def quote_compare(req: QuoteRequest) -> QuoteComparison:
     """Every transport mode offered to the destination, with the RM per tonne CO2e trade-off."""
     try:
-        return compare_modes(req)
+        return compare_modes(with_road_route(req)[0])
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
