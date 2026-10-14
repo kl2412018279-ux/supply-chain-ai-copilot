@@ -1,0 +1,29 @@
+{
+  "_note": "Assumptions for the control tower (fictional, example values). Confirm free time and tariffs per shipping line / delivery order and against the current Westports tariff.",
+  "free_time": {
+    "_source": "Assumption: typical combined free time at Port Klang for import boxes",
+    "demurrage_free_days": 3,
+    "detention_free_days": 5,
+    "port_storage_free_days": 3
+  },
+  "charges_rm_per_day": {
+    "_source": "Assumption: shipping-line demurrage/detention and port storage after free time",
+    "demurrage": {"20": 120.0, "40": 240.0},
+    "detention": {"20": 90.0, "40": 160.0},
+    "port_storage": {"20": 20.0, "40": 40.0}
+  },
+  "leakage": {
+    "_source": "Assumption: how margin leaks on a container haulage job",
+    "idle_truck_rm_per_hour": 55.0,
+    "free_waiting_hours": 2,
+    "late_penalty_pct": 5.0,
+    "late_penalty_after_hours": 24
+  },
+  "customers": {
+    "_note": "FICTIONAL customers, by the cargo they ship",
+    "chemicals": ["Petrokim Selatan Sdn Bhd", "Delta Specialty Chemicals"],
+    "palm-oil": ["Sinar Oleo Refinery", "Tanjung Agro Products"],
+    "plastics": ["Polimer Jaya Industries", "Klang Resin Trading"],
+    "general": ["Mutiara Retail Distribution", "Seri Home Appliances"]
+  }
+}
