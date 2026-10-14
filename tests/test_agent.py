@@ -96,6 +96,22 @@ def test_copilot_survives_agent_errors():
     assert "internal error" in response.answer
 
 
+def test_copilot_falls_back_when_llm_agent_fails(agent, embedder):
+    class BrokenAgent:
+        name = "langgraph"
+
+        def run(self, query):
+            raise RuntimeError("model_decommissioned")
+
+    cache = SemanticCache(embedder, InMemoryCacheBackend(), threshold=0.95)
+    copilot = SupplyChainCopilot(BrokenAgent(), cache, fallback=agent)
+    response = copilot.ask("Emissions for 500 kg shipped 300 km by truck")
+    assert "15.75 kg CO2e" in response.answer
+    assert response.agent == "rule-based (fallback: langgraph failed)"
+    # fallback answers are not cached, so the LLM is retried next time
+    assert not copilot.ask("Emissions for 500 kg shipped 300 km by truck").cached
+
+
 def test_copilot_redacts_agent_output():
     class LeakyAgent:
         name = "leaky"
