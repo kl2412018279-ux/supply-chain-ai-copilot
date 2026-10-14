@@ -80,3 +80,24 @@ def test_redis_semantic_cache(embedder):
     assert cache.lookup("what is our on-time rate")[0] == {"answer": "A-"}
     assert cache.lookup("Forecast chemicals volume") is None
     backend.clear()
+
+
+def test_pg_connection_reconnects_after_drop():
+    if not DB_URL:
+        pytest.skip("TEST_DATABASE_URL not set")
+    from src.db import PgConnection
+
+    conn = PgConnection(DB_URL)
+    pid = conn.execute("SELECT pg_backend_pid()").fetchone()[0]
+    killer = PgConnection(DB_URL)
+    killer.execute("SELECT pg_terminate_backend(%s)", (pid,))
+    # The next statement reopens the connection instead of failing for good.
+    assert conn.execute("SELECT 1").fetchone()[0] == 1
+    assert conn.execute("SELECT pg_backend_pid()").fetchone()[0] != pid
+    # A bad statement on a healthy connection still raises.
+    import psycopg
+
+    with pytest.raises(psycopg.errors.UndefinedTable):
+        conn.execute("SELECT * FROM no_such_table")
+    killer.close()
+    conn.close()
