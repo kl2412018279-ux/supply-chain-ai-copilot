@@ -42,7 +42,7 @@ from src.forecasting.predict import (
 )
 from src.forecasting.volume_repository import VolumeSummary, get_volume_repository
 from src.guardrails.schemas import CopilotResponse, Source
-from src.hauliers.scorecard import HaulierScore, build_scorecard, monthly_on_time
+from src.hauliers.scorecard import HaulierScore, build_scorecard, get_delivery_log, monthly_on_time
 from src.observability import metrics
 from src.operations.freetime import FreeTimeSummary, generate_board, summarise
 from src.operations.margin import MarginSummary, margin_summary
@@ -77,6 +77,11 @@ def bootstrap() -> None:
     if settings.auto_ingest and get_vector_store().count() == 0 and settings.documents_dir.exists():
         logger.info("Vector store empty - ingesting %s", settings.documents_dir)
         ingest_directory(settings.documents_dir)
+    if settings.database_url:
+        # Create and fill every table now, not when a page first needs it.
+        get_volume_repository()
+        get_document_store()
+        get_delivery_log()
 
 
 @asynccontextmanager
