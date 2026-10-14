@@ -6,7 +6,7 @@ from tests.conftest import SAMPLE_PDF
 
 
 @pytest.fixture(scope="module")
-def client(trained_model, ingested_store):
+def client(trained_model, ingested_store, delay_model):
     with TestClient(app) as c:
         yield c
 
@@ -139,3 +139,54 @@ def test_metrics(client):
     body = client.get("/metrics").json()
     assert body["counters"]["requests"] >= 1
     assert "semantic_cache" in body
+
+
+def test_route_recommendation_endpoint(client):
+    body = {"job": {"destination": "Penang", "cargo_type": "chemicals"}, "priorities": {"cost": 1}}
+    r = client.post("/routing/recommend", json=body)
+    assert r.status_code == 200
+    rec = r.json()
+    assert rec["recommended"]["carrier"] == "raillink" and len(rec["options"]) == 4
+    bad = {"job": {"destination": "Bangkok"}}
+    assert client.post("/routing/recommend", json=bad).status_code == 404
+
+
+def test_delay_endpoints(client):
+    body = {
+        "destination": "Kuching",
+        "carrier": "nusantara",
+        "eta": "2026-12-10",
+        "congestion": 0.9,
+    }
+    r = client.post("/delays/predict", json=body)
+    assert r.status_code == 200 and r.json()["risk"] == "High"
+    bad = {"destination": "Kuching", "carrier": "hijau"}
+    assert client.post("/delays/predict", json=bad).status_code == 422
+    upcoming = client.get("/delays/upcoming", params={"days": 7}).json()
+    scores = [row["risk_score"] for row in upcoming]
+    assert upcoming and scores == sorted(scores, reverse=True)
+
+
+def test_haulier_endpoints(client):
+    scores = client.get("/hauliers/scorecard").json()
+    assert scores[0]["rank"] == 1 and {s["grade"] for s in scores} <= {"A", "B", "C", "D"}
+    assert client.get("/hauliers/hijau/trend").status_code == 200
+    assert client.get("/hauliers/nobody/trend").status_code == 404
+
+
+def test_document_extraction_and_records(client):
+    from tests.conftest import ROOT
+
+    pdf = (ROOT / "data" / "samples" / "bl_resin_import.pdf").read_bytes()
+    r = client.post("/documents/extract", files={"file": ("bl.pdf", pdf, "application/pdf")})
+    assert r.status_code == 200
+    result = r.json()
+    assert result["document"]["document_number"] == "SPLU2610045"
+    assert result["suggested_quote"]["destination"] == "shah-alam"
+    saved = client.post(
+        "/documents/records", json={"file_name": "bl.pdf", "document": result["document"]}
+    )
+    assert saved.status_code == 200
+    numbers = [row["document_number"] for row in client.get("/documents/records").json()]
+    assert "SPLU2610045" in numbers
+    assert client.post("/documents/extract", files={"file": ("x.txt", b"hi")}).status_code == 415

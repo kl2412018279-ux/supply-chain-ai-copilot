@@ -78,6 +78,11 @@ class Settings:
             _env("MODEL_PATH", str(PROJECT_ROOT / "models" / "volume_model.joblib"))
         )
     )
+    delay_model_path: Path = field(
+        default_factory=lambda: Path(
+            _env("DELAY_MODEL_PATH", str(PROJECT_ROOT / "models" / "delay_model.joblib"))
+        )
+    )
     volumes_csv_path: Path = field(
         default_factory=lambda: Path(
             _env("VOLUMES_CSV_PATH", str(PROJECT_ROOT / "data" / "raw" / "container_volumes.csv"))

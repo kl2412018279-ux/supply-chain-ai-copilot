@@ -120,7 +120,7 @@ with result:
             items[["category", "description", "amount_rm"]].assign(
                 category=items["category"].str.capitalize()
             ),
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
             column_config={
                 "category": st.column_config.TextColumn("Category", width="small"),
                 "description": st.column_config.TextColumn("Line item"),

@@ -156,6 +156,9 @@ DOMAIN_TERMS = {
     "flexitank", "chemical", "chemicals", "sds", "msds", "un", "plastic", "plastics", "resin",
     "spend", "budget", "revenue", "volume", "volumes", "malaysia", "penang", "johor", "sabah",
     "sarawak", "ipoh", "kuantan", "melaka", "shah", "alam", "kl", "kuching", "kinabalu",
+    "carrier", "carriers", "hauliers", "subcontractor", "scorecard", "delay", "delayed",
+    "delays", "late", "eta", "risk", "congestion", "monsoon", "bill", "lading", "invoice",
+    "recommend", "routes", "reliable", "on-time",
 }  # fmt: skip
 _GREETING_RE = re.compile(
     r"^\s*(hi|hello|hey|thanks|thank you|help|what can you do)\b[\s!?.]*$", re.IGNORECASE

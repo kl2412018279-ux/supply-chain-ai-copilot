@@ -1,0 +1,54 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 903 >>
+stream
+BT /F1 10 Tf 13 TL 50 750 Td
+(COMMERCIAL INVOICE) Tj T*
+(FICTIONAL SAMPLE DOCUMENT FOR DEMONSTRATION) Tj T*
+() Tj T*
+(Invoice No: PSR-INV-2026-0912) Tj T*
+(Invoice Date: 2026-10-08) Tj T*
+(Seller: Perkasa Sawit Refinery Sdn Bhd, Jalan Kapar, Klang, Selangor, Malaysia) Tj T*
+(Buyer: Rotterdam Edible Oils B.V., Botlek, Rotterdam, Netherlands) Tj T*
+(Incoterms: FOB Port Klang) Tj T*
+(Country of Origin: Malaysia) Tj T*
+(Port of Loading: Port Klang - Westport \(MYPKG\)) Tj T*
+(Port of Discharge: Rotterdam \(NLRTM\)) Tj T*
+() Tj T*
+(Container No: QZXU2610063, QZXU2610079, QZXU2610084) Tj T*
+(Container Size: 3 x 20' \(FLEXITANK\)) Tj T*
+(Description of Goods: RBD PALM OLEIN, IV 56 MIN, MSPO CERTIFIED) Tj T*
+(HS Code: 1511.90) Tj T*
+(Quantity: 63.000 MT) Tj T*
+(Unit Price: USD 1,085.00 / MT) Tj T*
+(Total Amount: USD 68,355.00) Tj T*
+(Gross Weight: 63,450 KGS) Tj T*
+(Net Weight: 63,000 KGS) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001195 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1265
+%%EOF

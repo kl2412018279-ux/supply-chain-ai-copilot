@@ -59,12 +59,24 @@ with st.sidebar:
     st.caption("[Source on GitHub](https://github.com/kl2412018279-ux/supply-chain-ai-copilot)")
 
 page = st.navigation(
-    [
-        st.Page("views/copilot.py", title="Copilot", icon=":material/forum:", default=True),
-        st.Page("views/quote.py", title="Quote", icon=":material/request_quote:"),
-        st.Page("views/forecast.py", title="Forecast", icon=":material/insights:"),
-        st.Page("views/documents.py", title="Documents", icon=":material/description:"),
-    ],
+    {
+        "": [st.Page("views/copilot.py", title="Copilot", icon=":material/forum:", default=True)],
+        "Commercial": [
+            st.Page("views/quote.py", title="Quote", icon=":material/request_quote:"),
+            st.Page("views/planner.py", title="Route planner", icon=":material/alt_route:"),
+        ],
+        "Operations": [
+            st.Page("views/forecast.py", title="Forecast", icon=":material/insights:"),
+            st.Page("views/delays.py", title="Delay risk", icon=":material/schedule:"),
+            st.Page("views/intake.py", title="Document intake", icon=":material/document_scanner:"),
+        ],
+        "Partners": [
+            st.Page("views/hauliers.py", title="Hauliers", icon=":material/local_shipping:")
+        ],
+        "Knowledge": [
+            st.Page("views/documents.py", title="Documents", icon=":material/description:")
+        ],
+    },
     position="top",
 )
 page.run()

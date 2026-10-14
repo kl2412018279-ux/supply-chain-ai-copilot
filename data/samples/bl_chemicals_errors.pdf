@@ -1,0 +1,52 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 825 >>
+stream
+BT /F1 10 Tf 13 TL 50 750 Td
+(BILL OF LADING) Tj T*
+(FICTIONAL SAMPLE DOCUMENT FOR DEMONSTRATION) Tj T*
+() Tj T*
+(B/L No: SPLU2610311) Tj T*
+(Date of Issue: 2026-10-05) Tj T*
+(Shipper: Formosa Fine Acids Co., Ltd., Kaohsiung, Taiwan) Tj T*
+(Consignee: Johor Specialty Chemicals Sdn Bhd, Pasir Gudang Industrial Estate, Johor, Malaysia) Tj T*
+(Notify Party: Same as consignee) Tj T*
+(Vessel / Voyage: MV Lotus Bay / 118S) Tj T*
+(Port of Loading: Kaohsiung \(TWKHH\)) Tj T*
+(Port of Discharge: Port Klang - Northport \(MYPKG\)) Tj T*
+() Tj T*
+(Container No: QZXU7001125) Tj T*
+(Container Size: 1 x 20' GP) Tj T*
+(Packages: 80 IBC TOTES) Tj T*
+(Description of Goods: ACETIC ACID, GLACIAL. UN 2789, CLASS 8 \(3\), PG II. DANGEROUS GOODS) Tj T*
+(HS Code: 2915.21) Tj T*
+(Gross Weight: 24,500 KGS) Tj T*
+(Freight: COLLECT) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001117 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1187
+%%EOF

@@ -64,11 +64,11 @@ with library:
     if sources:
         st.dataframe(
             pd.DataFrame(sources.items(), columns=["Document", "Chunks"]),
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
         )  # fmt: skip
     else:
         st.info("No documents indexed yet.")
-    with st.popover("Add document", icon=":material/upload_file:", use_container_width=True):
+    with st.popover("Add document", icon=":material/upload_file:", width="stretch"):
         upload = st.file_uploader("PDF, TXT or MD", type=["pdf", "txt", "md"])
         if upload is not None and st.button("Index document", type="primary"):
             try:

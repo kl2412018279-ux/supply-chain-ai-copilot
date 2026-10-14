@@ -40,4 +40,4 @@ def style(fig: go.Figure, *, height: int = 320, y_title: str = "", x_title: str 
 
 
 def show(fig: go.Figure) -> None:
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
