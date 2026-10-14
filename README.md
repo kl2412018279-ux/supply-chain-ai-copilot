@@ -128,7 +128,7 @@ Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 
 | 3 | **AI safety & guardrails** | Pydantic schemas for every tool argument and response, injection and off-topic filters, output redaction, no text-to-SQL. `src/guardrails/` |
 | 4 | **Semantic caching** | Redis-backed (in-memory fallback), with TTL, entity fingerprinting, invalidation on document changes, and no caching of fallback answers. `src/cache/` |
 | 5 | **Resilience** | If the LLM provider fails (retired model, outage, rate limit), the rule-based agent answers with the same tools. Every external dependency (Postgres, Redis, LLM, embedding model) is optional. |
-| 6 | **Testing & CI/CD** | 204 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
+| 6 | **Testing & CI/CD** | 205 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
 
 ---
 
@@ -280,7 +280,13 @@ docker compose up -d postgres redis && make test-all   # + pgvector/Redis integr
   RERANKER_BACKEND = "lexical"
   ```
 - **Hugging Face Spaces.** Use a Docker Space with the command `streamlit run app.py --server.port 7860 --server.address 0.0.0.0`.
-- **Supabase** (free Postgres with pgvector). Set `DATABASE_URL`.
+- **Supabase** (free Postgres with pgvector) as the database for the live demo:
+  1. Create a free project at [supabase.com](https://supabase.com). Use a password without `@ : / # ?` so it can sit in a URL.
+  2. Press **Connect** at the top of the project, choose **Session pooler**, and copy the URI (user `postgres.<project-ref>`, port 5432). Streamlit Community Cloud has no IPv6, and Supabase's direct connection is IPv6-only unless you buy the IPv4 add-on, so use the pooler string.
+  3. Replace `[YOUR-PASSWORD]` in it and add it to the app secrets as `DATABASE_URL = "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"`.
+  4. Reboot the app. On first start it enables pgvector and creates and fills the tables `container_volumes`, `haulier_deliveries`, `document_chunks` and `shipping_documents`. Saved B/Ls and uploaded documents then survive restarts.
+
+  Each store reconnects automatically if the connection drops (`src/db.py`), and prepared statements are off, so the transaction pooler (port 6543) works too.
 
 ## Project structure
 
@@ -307,7 +313,7 @@ supply-chain-ai-copilot/
 │   ├── config.py, observability.py
 ├── notebooks/                   # 01 volume exploration, 02 training + RM projection
 ├── docker/, docker-compose.yml, Dockerfile, n8n/, scripts/
-└── tests/                       # pytest suite (204 tests)
+└── tests/                       # pytest suite (205 tests)
 ```
 
 ## Roadmap
