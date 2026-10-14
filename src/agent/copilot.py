@@ -12,7 +12,7 @@ from functools import lru_cache
 
 from pydantic import ValidationError
 
-from src.agent.workflow import Agent, build_agent
+from src.agent.workflow import Agent, RuleBasedAgent, build_agent
 from src.cache.semantic_cache import SemanticCache, get_semantic_cache
 from src.config import get_settings
 from src.guardrails.schemas import CopilotResponse
@@ -25,9 +25,16 @@ FALLBACK_ANSWER = "Sorry, I couldn't produce a reliable answer. Please rephrase 
 
 
 class SupplyChainCopilot:
-    def __init__(self, agent: Agent, cache: SemanticCache | None = None):
+    def __init__(
+        self,
+        agent: Agent,
+        cache: SemanticCache | None = None,
+        fallback: Agent | None = None,
+    ):
         self.agent = agent
         self.cache = cache
+        # Answers when the primary (LLM) agent fails, e.g. provider outage or retired model.
+        self.fallback = fallback
 
     @traceable(name="copilot.ask")
     def ask(self, query: str, use_cache: bool = True) -> CopilotResponse:
@@ -58,7 +65,7 @@ class SupplyChainCopilot:
             metrics.incr("cache.miss")
 
         try:
-            output = self.agent.run(query)
+            output = self._run_agent(query)
             response = CopilotResponse(
                 answer=redact(output.answer) or FALLBACK_ANSWER,
                 tool_calls=output.tool_calls,
@@ -79,9 +86,25 @@ class SupplyChainCopilot:
                 )
             )
 
-        if use_cache and self.cache is not None and response.tool_calls:
+        # Don't cache degraded fallback answers: they'd outlive the outage.
+        cacheable = response.tool_calls and "fallback" not in response.agent
+        if use_cache and self.cache is not None and cacheable:
             self.cache.store(query, response.model_dump(mode="json", exclude={"latency_ms"}))
         return done(response)
+
+    def _run_agent(self, query: str):
+        try:
+            return self.agent.run(query)
+        except Exception:
+            if self.fallback is None:
+                raise
+            logger.exception(
+                "%s agent failed; answering with %s", self.agent.name, self.fallback.name
+            )
+            metrics.incr("errors.agent_fallback")
+            output = self.fallback.run(query)
+            output.agent = f"{self.fallback.name} (fallback: {self.agent.name} failed)"
+            return output
 
 
 @lru_cache
@@ -89,4 +112,6 @@ def get_copilot() -> SupplyChainCopilot:
     configure_tracing()
     settings = get_settings()
     cache = get_semantic_cache() if settings.cache_enabled else None
-    return SupplyChainCopilot(build_agent(settings), cache)
+    agent = build_agent(settings)
+    fallback = None if isinstance(agent, RuleBasedAgent) else RuleBasedAgent()
+    return SupplyChainCopilot(agent, cache, fallback)

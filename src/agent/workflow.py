@@ -37,7 +37,7 @@ Rules:
 - Be concise: lead with the answer, then the key figures."""
 
 DEFAULT_MODELS = {
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "openai/gpt-oss-120b",
     "ollama": "llama3.1",
     "openai": "gpt-4o-mini",
     "anthropic": "claude-haiku-5-5",

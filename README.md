@@ -106,13 +106,13 @@ On first start the API trains the forecaster, loads the sales CSV into Postgres 
 
 | `LLM_PROVIDER` | Key | Default model |
 |---|---|---|
-| `groq` (recommended, free tier) | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| `groq` (recommended, free tier) | `GROQ_API_KEY` | `openai/gpt-oss-120b` |
 | `ollama` (fully local) | none, run `ollama pull llama3.1` | `llama3.1` |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-5-5` |
 | `none` | none | rule-based offline agent |
 
-Override the model with `LLM_MODEL`.
+Override the model with `LLM_MODEL`. Providers retire models over time (Groq shut down `llama-3.3-70b-versatile` in August 2026), so if the LLM agent fails, check the provider's model list. In the meantime the copilot automatically answers with the rule-based agent.
 
 ---
 
