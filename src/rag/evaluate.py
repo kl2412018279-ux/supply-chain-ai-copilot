@@ -43,7 +43,7 @@ EVAL_SET: list[tuple[str, str]] = [
     ("How many free days of port storage are typical at Port Klang?", "3 days for port storage"),
     ("How much more does dangerous goods storage cost?", "1.8 times"),
     ("How long is a quotation valid?", "valid for 7 days"),
-    ("What is the fleet emissions reduction target?", "30 percent by 2030"),
+    ("How much goods-in-transit insurance does Muara hold per container?", "RM 300,000"),
 ]
 
 

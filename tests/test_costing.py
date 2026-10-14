@@ -43,7 +43,6 @@ def test_fuel_cost_matches_rate_card(rates):
     litres = 40 * (0.45 + 0.32)  # round trip: loaded out, empty back
     assert q.diesel_litres == pytest.approx(litres, abs=0.1)
     assert _total(q, "fuel") == pytest.approx(litres * 2.99, abs=0.01)
-    assert q.co2e_kg == pytest.approx(litres * 2.68, abs=0.1)  # CO2 from the same litres
 
 
 def test_price_is_cost_plus_margin(rates):
@@ -106,19 +105,37 @@ def test_east_malaysia_goes_by_sea(rates):
 def test_compare_modes_long_haul(rates):
     cmp = compare_modes(QuoteRequest(destination="Penang", cargo_type="chemicals"), rates)
     assert [q.mode for q in cmp.quotes] == [Mode.truck, Mode.rail]
-    rail = cmp.quotes[1]
-    assert rail.co2e_kg < cmp.quotes[0].co2e_kg
-    assert cmp.lowest_co2_mode is Mode.rail
+    truck, rail = cmp.quotes
+    assert rail.price_rm < truck.price_rm
+    assert cmp.cheapest_mode is Mode.rail and cmp.fastest_mode is Mode.truck
+    assert cmp.transit_days == {"truck": 1, "rail": 2}
+    # Truck saves one day over rail; the premium is the full price difference per day saved.
+    assert cmp.premium_rm_per_day_saved == pytest.approx(truck.price_rm - rail.price_rm, abs=0.01)
 
 
-def test_carbon_abatement_cost_when_greener_mode_is_dearer(tmp_path):
+def test_premium_per_day_scales_with_days_saved(rates):
+    cmp = compare_modes(QuoteRequest(destination="Penang"), rates)
+    data = json.loads(json.dumps(rates.data))
+    data["transit"]["rail_terminal_dwell_days"] = 2  # rail now 3 days vs truck 1
+    slow = compare_modes(QuoteRequest(destination="Penang"), RateCard(data))
+    assert slow.transit_days == {"truck": 1, "rail": 3}
+    assert slow.premium_rm_per_day_saved == pytest.approx(cmp.premium_rm_per_day_saved / 2, 0.01)
+
+
+def test_no_premium_when_cheapest_is_also_fastest(tmp_path):
     data = json.loads((ROOT / "data" / "reference" / "rates.json").read_text())
     data["rail"]["rm_per_container_km"] = {"20": 20.0, "40": 30.0}  # make rail expensive
     path = tmp_path / "rates.json"
     path.write_text(json.dumps(data))
     cmp = compare_modes(QuoteRequest(destination="Ipoh"), RateCard.load(path))
-    assert cmp.cheapest_mode is Mode.truck and cmp.lowest_co2_mode is Mode.rail
-    assert cmp.carbon_abatement_rm_per_tonne > 0
+    assert cmp.cheapest_mode is Mode.truck and cmp.fastest_mode is Mode.truck
+    assert cmp.premium_rm_per_day_saved is None
+
+
+def test_single_mode_comparison(rates):
+    cmp = compare_modes(QuoteRequest(destination="Kuching"), rates)
+    assert cmp.cheapest_mode is cmp.fastest_mode is Mode.sea
+    assert cmp.transit_days == {"sea": 4} and cmp.premium_rm_per_day_saved is None
 
 
 @pytest.mark.parametrize("size", ["20ft", "40'", 40])

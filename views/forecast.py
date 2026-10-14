@@ -73,17 +73,22 @@ k1, k2, k3, k4 = st.columns(4)
 k1.metric(
     "Forecast volume", f"{total:,.0f} TEU",
     delta=f"{(total / prior - 1) * 100:+.1f}% vs previous {horizon} days" if prior else None,
+    border=True,
 )  # fmt: skip
-k2.metric(f"Busiest day · {pd.Timestamp(peak_day):%a %d %b}", f"{fc_total.max():,.0f} TEU")
+k2.metric(
+    f"Busiest day · {pd.Timestamp(peak_day):%a %d %b}", f"{fc_total.max():,.0f} TEU", border=True
+)
 k3.metric(
     "Prime movers at peak", f"{trucks_at_peak}",
     help=f"{trips_per_truck} trip(s) per truck per shift to {road[basis]['label']} "
     f"({rates.trip_hours(basis):.1f} h round trip incl. port turnaround).",
+    border=True,
 )  # fmt: skip
 k4.metric(
     "Projected haulage revenue",
     rm(revenue, 0),
     help="Forecast TEU × current 20ft quote per commodity.",
+    border=True,
 )
 
 h = hist_total.copy()

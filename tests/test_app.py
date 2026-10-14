@@ -19,7 +19,18 @@ def app(trained_model, ingested_store, delay_model):
     return at
 
 
+def test_control_tower_is_home(app):
+    labels = [m.label for m in app.metric]
+    for label in ("Past free time", "Charges at planned move", "Gross margin (90 d)",
+                  "Margin leaked (90 d)", "On-time delivery (30 d)"):  # fmt: skip
+        assert label in labels
+    assert any("Biggest leak" in i.value for i in app.info)
+    app.pills[0].set_value(["Customs hold"]).run()
+    assert not app.exception
+
+
 def test_copilot_page_suggestion_and_chat(app):
+    app.switch_page("views/copilot.py").run()
     # Empty state shows one-click suggestions
     labels = [b.label for b in app.button]
     assert any(label.startswith("Quote 2 x 40ft") for label in labels)
@@ -34,12 +45,23 @@ def test_quote_page(app):
     assert not app.exception
     price = next(m for m in app.metric if m.label == "Quoted price")
     assert price.value.startswith("RM")
+    labels = {m.label for m in app.metric}
+    assert {"Cost", "Margin"} <= labels
 
     # What-if: higher diesel shows a delta against the rate card
     diesel = next(s for s in app.slider if s.label.startswith("Diesel"))
     diesel.set_value(3.5).run()
     price = next(m for m in app.metric if m.label == "Quoted price")
     assert "vs rate card" in (price.delta or "")
+
+
+def test_quote_modes_view_shows_transit_days(app):
+    app.switch_page("views/quote.py").run()
+    app.selectbox[0].set_value("penang-prai").run()
+    view = next(b for b in app.button_group if "Modes" in b.options)
+    view.set_value("Modes").run()
+    assert not app.exception
+    assert any("per day saved" in i.value for i in app.info)
 
 
 def test_forecast_and_documents_pages(app):
@@ -58,6 +80,9 @@ def test_new_pages_render(app):
     app.switch_page("views/planner.py").run()
     assert not app.exception
     assert any("Recommended:" in a.value for a in app.success)
+    labels = {m.label for m in app.metric}
+    assert {"On time", "Damage"} <= labels
+    assert {s.label for s in app.slider} >= {"Low price", "Fast delivery", "Cargo safety"}
 
     app.switch_page("views/delays.py").run()
     assert not app.exception
@@ -70,6 +95,7 @@ def test_new_pages_render(app):
     app.switch_page("views/hauliers.py").run()
     assert not app.exception
     assert any(m.label == "Grade" for m in app.metric)
+    assert any(m.label == "Compliance" for m in app.metric)
 
 
 def test_quote_route_view_with_road_route(app, monkeypatch):

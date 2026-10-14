@@ -11,26 +11,30 @@ An AI copilot for a **Malaysian third-party logistics (3PL) provider at Port Kla
 
 > **Case study, not a real company.** The copilot is built for *Muara Logistics Sdn Bhd*, a **fictional** company modelled on typical Port Klang ground-handling 3PLs. All volumes are synthetic, and all rates are clearly labelled examples, see [Rate card](#rate-card-rm). This is an independent portfolio project, not affiliated with any company.
 
+![Control tower: free-time clock, margin leakage and arrivals at risk](docs/images/control-tower.png)
+
 | Quote builder | Volume forecast |
 |---|---|
 | ![Quote page: itemised RM cost breakdown](docs/images/quote.png) | ![Forecast page: weekly TEU actual vs forecast](docs/images/forecast.png) |
 | **Route & carrier planner** | **Delay-risk prediction** |
-| ![Route planner: options ranked by price, transit, CO2e and reliability](docs/images/planner.png) | ![Delay risk: probabilities and risk drivers](docs/images/delay-risk.png) |
+| ![Route planner: options ranked by price, transit time, reliability and cargo safety](docs/images/planner.png) | ![Delay risk: probabilities and risk drivers](docs/images/delay-risk.png) |
 | **Document intake (B/L extraction)** | **Haulier scorecard (dark mode)** |
-| ![Document intake: extracted fields and validation](docs/images/intake.png) | ![Haulier scorecard with ESG evidence](docs/images/hauliers-dark.png) |
+| ![Document intake: extracted fields and validation](docs/images/intake.png) | ![Haulier scorecard with compliance evidence](docs/images/hauliers-dark.png) |
 
 ## What it does
 
 | Question an ops team asks | What the copilot does |
 |---|---|
-| *"Quote 2 × 40ft palm oil from Westport to Pasir Gudang"* | Builds an **itemised quote in RM** on the **real truck road distance** (OpenRouteService, with the road drawn on the map and turn-by-turn directions): diesel, truck maintenance, driver, tolls, Westports handling, customs (K1/K2), cargo surcharges, warehousing and margin. Shows **CO2e computed from the same diesel litres**. |
-| *"Compare truck vs rail for chemicals to Penang"* | Prices every transport mode side by side and reports the **RM cost per tonne of CO2e avoided**. |
+| *"Which containers are about to incur demurrage?"* | **Control tower / free-time clock**: every live import box with its last free day, **demurrage + port storage** until gate-out and **detention** until the empty is returned, RM already accrued and RM at the planned move, and the next action (book a haulier, chase the K1 release, return the empty). |
+| *"Where are we losing margin?"* | **Margin leakage** over the job log: quoted vs actual gross margin and the RM lost to each leak (unbilled waiting time, demurrage/detention absorbed, late-delivery penalties, damage claims, diesel above quote), by customer and by lane, with the loss-making jobs listed. |
+| *"Quote 2 × 40ft palm oil from Westport to Pasir Gudang"* | Builds an **itemised quote in RM** on the **real truck road distance** (OpenRouteService, with the road drawn on the map and turn-by-turn directions): diesel, truck maintenance, driver, tolls, Westports handling, customs (K1/K2), cargo surcharges, warehousing and **margin in RM**, plus the diesel litres the job burns. |
+| *"Compare truck vs rail for chemicals to Penang"* | Prices every transport mode side by side with its **door-to-door transit days** and reports the **extra RM paid per transit day saved**. |
 | *"How many palm oil containers next month?"* | **LightGBM TEU forecast** per commodity, with Chinese New Year and Hari Raya dips and the Sep–Nov palm-oil harvest peak. |
-| *"What's our projected haulage spend for chemicals?"* | Forecast TEU × rate card → **projected cost, revenue, diesel and CO2e in RM**. |
-| *"Which carrier is best for chemicals to Penang? Cheapest please"* | **Route & carrier planner**: ranks every mode × carrier on price, transit days, CO2e and *historical* on-time rate with your priority weights, flags Pareto-dominated options and explains the trade-off (*"1 day slower, 42% cheaper, 71% less CO2e"*). |
+| *"What's our projected haulage spend for chemicals?"* | Forecast TEU × rate card → **projected cost, revenue, margin and diesel in RM**. |
+| *"Which carrier is best for chemicals to Penang? Cheapest please"* | **Route & carrier planner**: ranks every mode × carrier on price, transit days, *historical* on-time rate and *historical* cargo damage rate with your priority weights, flags Pareto-dominated options and explains the trade-off against the cheapest, fastest or most reliable alternative (*"1 day slower, 50% cheaper, on time 87% vs 96%"*). |
 | *"Will a chemicals shipment to Kuching in December be delayed?"* | **Delay-risk classifier** (Low / Medium / High) with probabilities, the drivers behind the prediction (monsoon, **live rainfall at the destination from Open-Meteo**, congestion, customs inspection, carrier…) and expected **demurrage exposure in RM**. |
 | *(upload a Bill of Lading PDF)* | **Document intake**: extracts B/L and invoice fields into a Pydantic record, validates ISO 6346 container check digits, HS codes and the 25 t weight limit, turns the document into a haulage quote, saves it to the database after review. |
-| *"Show the haulier scorecard"* / *"How does Cempaka score on ESG?"* | **Haulier scorecard**: on-time, damage and claims from SQL over the delivery log, plus ESG criteria evidenced by quoting each haulier's own policy document; composite grade A–D. |
+| *"Show the haulier scorecard"* / *"How does Cempaka score on compliance?"* | **Haulier scorecard**: on-time, damage and claims from SQL over the delivery log, plus compliance criteria (DG training, driver hours, Euro 5/6 fleet and maintenance, GPS tracking, goods-in-transit insurance, ISO 9001/45001/39001) evidenced by quoting each haulier's own policy document; composite grade A–D. |
 | *"What documents do I need to clear a chemical import?"* | **Hybrid RAG** over the operations manual (customs forms, dangerous goods, palm oil, demurrage, warehousing), with page citations. |
 | *"Ignore previous instructions…"* | 🛡️ Blocked by input guardrails before any tokens are spent. |
 
@@ -63,12 +67,14 @@ flowchart LR
     AG -->|tool| R[recommend_route_and_carrier]
     AG -->|tool| DR[predict_delay_risk]
     AG -->|tool| HS[get_haulier_scorecard]
+    AG -->|tool| OPS[get_free_time_status<br/>get_margin_leakage]
 
     Q --> RC[(rates.json<br/>RM rate card + carriers)]
     R --> RC
     R --> HS
     DR --> RF[Random-forest delay model]
     HS --> DL[(Delivery log<br/>SQL)]
+    OPS --> DL
     API -->|POST /documents/extract| X[B/L & invoice extraction<br/>LLM or rules + validation]
     X --> PG
     FC --> LGB[LightGBM TEU model]
@@ -97,7 +103,6 @@ Every quote is built bottom-up from [`data/reference/rates.json`](data/reference
 | Diesel (Peninsular) | RM2.99 / L | MOF weekly APM retail price, Feb 2026 (latest found) |
 | Port handling 20ft / 40ft | RM375 / RM562.50 | Westports container tariff effective 1 Jan 2026 |
 | Max gross weight on trailer | 25,000 kg | Association of Malaysian Hauliers limit at Port Klang (May 2025) |
-| CO2 per litre diesel | 2.68 kg | Standard tank-to-wheel combustion factor |
 | Fuel use, truck costs, driver, tolls, customs fees, surcharges, warehousing, rail/sea | see file | **Assumptions**: replace with real contract rates |
 
 How a truck quote is calculated:
@@ -107,7 +112,8 @@ How a truck quote is calculated:
 - **Cargo surcharges**: 25% dangerous-goods surcharge for chemicals, palm-oil tank fee.
 - **Warehousing** (DG storage at 1.8× the normal rate).
 - **15% margin** on top of cost.
-- **CO2e** = diesel litres × 2.68.
+
+Comparing modes adds the **door-to-door transit days** for each (truck by shift distance, or real drive time when routed; rail and sea including terminal and port dwell) and the **premium per day saved**: the fastest mode's extra price over the cheapest, divided by the days it saves.
 
 Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 cost (RM640 with margin). That is in line with the last published regulated rate of RM639 (RM533 haulage + tolls + fuel adjustment, MIDA, 2011).
 
@@ -122,7 +128,7 @@ Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 
 | 3 | **AI safety & guardrails** | Pydantic schemas for every tool argument and response, injection and off-topic filters, output redaction, no text-to-SQL. `src/guardrails/` |
 | 4 | **Semantic caching** | Redis-backed (in-memory fallback), with TTL, entity fingerprinting, invalidation on document changes, and no caching of fallback answers. `src/cache/` |
 | 5 | **Resilience** | If the LLM provider fails (retired model, outage, rate limit), the rule-based agent answers with the same tools. Every external dependency (Postgres, Redis, LLM, embedding model) is optional. |
-| 6 | **Testing & CI/CD** | 193 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
+| 6 | **Testing & CI/CD** | 204 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
 
 ---
 
@@ -154,11 +160,11 @@ Both baselines miss every high-risk shipment, which is the class that costs mone
 | Method | hit@1 | hit@3 | MRR@3 |
 |---|---|---|---|
 | Dense only | 0.60 | 0.85 | 0.72 |
-| Keyword only (BM25) | 0.70 | 0.95 | 0.82 |
-| Hybrid (RRF) | 0.70 | 0.85 | 0.78 |
-| **Hybrid + rerank** | **0.70** | **1.00** | **0.84** |
+| Keyword only (BM25) | 0.75 | 0.95 | 0.85 |
+| Hybrid (RRF) | 0.75 | 0.90 | 0.82 |
+| **Hybrid + rerank** | **0.65** | **1.00** | **0.82** |
 
-These numbers use the offline backends (hashing embedder, lexical reranker), which is what CI runs. Measure the real bge-small + FlashRank stack with `EMBEDDING_BACKEND=sentence-transformers RERANKER_BACKEND=flashrank make eval`.
+Reranking finds the right passage in the top 3 for every question, but the offline lexical reranker puts it first less often than BM25 or RRF alone. These numbers use the offline backends (hashing embedder, lexical reranker), which is what CI runs. Measure the real bge-small + FlashRank stack with `EMBEDDING_BACKEND=sentence-transformers RERANKER_BACKEND=flashrank make eval`.
 
 ---
 
@@ -216,12 +222,14 @@ Override the model with `LLM_MODEL`. Providers retire models over time (Groq shu
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `POST` | `/chat` | Copilot answer + tool calls + sources (guardrails and cache applied) |
-| `POST` | `/quote` | Itemised RM quote + CO2e for a container job |
-| `POST` | `/quote/compare` | Every transport mode for a destination, with RM per tonne CO2e avoided |
-| `POST` | `/routing/recommend` | `{job, priorities}` → every mode × carrier option ranked, with explanation |
+| `POST` | `/quote` | Itemised RM quote (cost, margin, price, diesel) for a container job |
+| `POST` | `/quote/compare` | Every transport mode for a destination, with transit days and RM premium per day saved |
+| `POST` | `/routing/recommend` | `{job, priorities: {cost, speed, reliability, safety}}` → every mode × carrier option ranked, with explanation |
 | `POST` | `/delays/predict` | Delay risk, drivers and demurrage exposure for one shipment |
 | `GET` | `/delays/upcoming` | Upcoming arrivals scored and sorted by risk |
-| `GET` | `/hauliers/scorecard`, `/hauliers/{id}/trend` | Ranked scorecard with ESG evidence; monthly on-time trend |
+| `GET` | `/operations/free-time` | Containers on the demurrage / detention clock, most urgent first, with RM accrued and at the planned move |
+| `GET` | `/operations/margin?days=90` | Quoted vs actual margin, leakage by reason, margin by customer and weakest lanes |
+| `GET` | `/hauliers/scorecard`, `/hauliers/{id}/trend` | Ranked scorecard with compliance evidence; monthly on-time trend |
 | `POST` | `/documents/extract` | Bill of Lading / invoice PDF → validated fields + suggested quote |
 | `POST` / `GET` | `/documents/records` | Save a reviewed extraction / list saved documents |
 | `GET` | `/destinations`, `/rates` | Destinations served and the full rate card |
@@ -231,7 +239,6 @@ Override the model with `LLM_MODEL`. Providers retire models over time (Groq shu
 | `POST` | `/documents/ingest` | Upload a PDF/TXT/MD (used by n8n) |
 | `POST` | `/documents/search` | Hybrid search with optional rerank |
 | `GET` / `DELETE` | `/documents`, `/documents/{source}` | List / remove documents |
-| `POST` | `/emissions` | Generic tonne-km CO2e for any shipment |
 | `GET` | `/health`, `/metrics` | Liveness, latency percentiles, cache hit rate |
 
 ```bash
@@ -246,10 +253,11 @@ curl -s localhost:8000/quote -H 'content-type: application/json' \
 ## Data
 
 - **`data/raw/container_volumes.csv`**: synthetic daily TEU per commodity (chemicals, palm oil, plastics, general), January 2024 to September 2026. It includes weekday patterns, holiday dips, the palm-oil harvest peak, year-end peaks and growth. Regenerate it with `python -m src.forecasting.data`. Real exports work too: any CSV with a date, a commodity/series column and a TEU/volume column.
-- **`data/raw/operations_manual.pdf`**: a **fictional** 10-section operations manual covering customs (K1/K2/K8, uCustoms), dangerous goods, palm oil (heating, MSPO, EUDR), plastics, haulage, demurrage/detention, warehousing, pricing and ESG. It is generated from `scripts/sample_docs/operations_manual.md`. Its rules are simplified examples, so verify real requirements with JKDM and the port operators.
+- **`data/raw/operations_manual.pdf`**: a **fictional** 10-section operations manual covering customs (K1/K2/K8, uCustoms), dangerous goods, palm oil (heating, MSPO, EUDR), plastics, haulage, demurrage/detention, warehousing, pricing and subcontractor & fleet compliance. It is generated from `scripts/sample_docs/operations_manual.md`. Its rules are simplified examples, so verify real requirements with JKDM and the port operators.
 - **`data/raw/shipment_history.csv`**: 5,142 synthetic shipments with delay outcomes. Delays are driven by congestion, monsoon, daily rainfall at the destination, holiday weeks, customs inspection, dangerous goods, weekend arrival, distance and carrier reliability. Regenerate it with `python -m src.delays.model --regenerate`.
-- **`data/raw/haulier_deliveries.csv`** and **`data/raw/haulier_esg_*.md`**: synthetic delivery logs and **fictional** policy documents for six fictional carriers. The policies range from strong to weak, so the scorecard has something real to separate.
+- **`data/raw/haulier_deliveries.csv`** and **`data/raw/haulier_policy_*.md`**: synthetic delivery logs and **fictional** policy documents for the five subcontracted carriers (Muara's own fleet is evidenced from the operations manual). The policies range from strong to weak, so the scorecard has something real to separate.
 - **`data/samples/*.pdf`**: fictional Bills of Lading and a commercial invoice (`scripts/make_sample_shipping_docs.py`). `bl_chemicals_errors.pdf` deliberately contains a bad container check digit and an overweight container.
+- **`data/reference/operations.json`**: free time (demurrage 3 days, detention 5 days, port storage 3 days), demurrage / detention / storage rates, the leak assumptions (idle truck RM/hour, late-penalty rule) and the **fictional** customers. The control tower's container list is generated per day from these and the job ledger is built from the delivery log, because the demo has no terminal or TMS feed; the clock and charge logic are what would run on real data.
 - **`data/reference/rates.json`**: the rate card described above, plus the fictional carriers, transit assumptions and demurrage rates.
 
 ## Development
@@ -279,7 +287,7 @@ docker compose up -d postgres redis && make test-all   # + pgvector/Redis integr
 ```
 supply-chain-ai-copilot/
 ├── app.py                       # Streamlit entry: sidebar + top navigation
-├── views/                       # pages: copilot, quote, planner, forecast, delays, intake, hauliers, documents
+├── views/                       # pages: control tower, copilot, quote, planner, forecast, delays, intake, hauliers, documents
 ├── .streamlit/config.toml       # light/dark theme
 ├── data/
 │   ├── raw/                     # container_volumes.csv, operations_manual.pdf
@@ -288,8 +296,9 @@ supply-chain-ai-copilot/
 │   ├── costing/                 # rate card loader, quote engine, mode comparison, route & carrier planner, OpenRouteService road routing
 │   ├── delays/                  # shipment history generator, delay-risk classifier + explanations, Open-Meteo rainfall
 │   ├── extraction/              # B/L & invoice extraction, ISO 6346 validation, document store
-│   ├── hauliers/                # delivery logs, SQL scorecard, ESG evidence
-│   ├── forecasting/             # TEU data/features, train (MLflow), predict, volume repo, CO2 calc
+│   ├── operations/              # free-time (demurrage/detention) clock, job margin & leakage
+│   ├── hauliers/                # delivery logs, SQL scorecard, compliance evidence
+│   ├── forecasting/             # TEU data/features, train (MLflow), predict, volume repo
 │   ├── rag/                     # ingestion, embeddings, pgvector store, reranker, retriever, eval
 │   ├── agent/                   # tools, LangGraph workflow + rule-based agent, copilot pipeline
 │   ├── guardrails/              # input checks, redaction, response schemas
@@ -298,13 +307,13 @@ supply-chain-ai-copilot/
 │   ├── config.py, observability.py
 ├── notebooks/                   # 01 volume exploration, 02 training + RM projection
 ├── docker/, docker-compose.yml, Dockerfile, n8n/, scripts/
-└── tests/                       # pytest suite (193 tests)
+└── tests/                       # pytest suite (204 tests)
 ```
 
 ## Roadmap
 
 **Next ideas:**
-- **Free-time countdown**: combine extracted B/Ls with the delay model to alert on containers about to incur demurrage.
+- **Free-time from real documents**: start each container's clock from the extracted B/L and delivery order instead of the generated board, and push alerts when a box enters its last free day.
 - **Fleet maintenance tracker**: cost per km per prime mover, plus service-due alerts.
 - **Warehouse occupancy forecast** for the general and DG stores.
 - **n8n automation**: a forwarder's rate-request e-mail produces a draft quote; a scanned B/L in Google Drive triggers extraction (scanned images need OCR or a vision model first).

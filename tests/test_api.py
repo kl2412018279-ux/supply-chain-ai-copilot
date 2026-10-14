@@ -18,21 +18,9 @@ def test_health(client):
     assert body["llm_provider"] == "rule-based"
 
 
-def test_emissions_endpoint(client):
+def test_emissions_endpoint_is_gone(client):
     r = client.post("/emissions", json={"distance_km": 300, "weight_kg": 500, "mode": "truck"})
-    assert r.status_code == 200
-    assert r.json()["co2e_kg"] == 15.75
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"distance_km": -1, "weight_kg": 500},
-        {"distance_km": 10, "weight_kg": 500, "mode": "teleport"},
-    ],
-)
-def test_emissions_validation(client, payload):
-    assert client.post("/emissions", json=payload).status_code == 422
+    assert r.status_code == 404
 
 
 def test_forecast_endpoint(client):
@@ -60,13 +48,17 @@ def test_quote_endpoint(client):
     assert r.status_code == 200
     q = r.json()
     assert q["destination"] == "penang-prai" and q["mode"] == "truck"
-    assert q["price_rm"] > q["cost_rm"] > 0 and q["co2e_kg"] > 0
+    assert q["price_rm"] > q["cost_rm"] > 0 and q["margin_rm"] > 0 and q["diesel_litres"] > 0
     assert {i["category"] for i in q["line_items"]} >= {"fuel", "tolls", "port", "customs", "cargo"}
 
 
 def test_quote_compare_endpoint(client):
     r = client.post("/quote/compare", json={"destination": "Ipoh"})
-    assert [q["mode"] for q in r.json()["quotes"]] == ["truck", "rail"]
+    body = r.json()
+    assert [q["mode"] for q in body["quotes"]] == ["truck", "rail"]
+    assert body["cheapest_mode"] == "rail" and body["fastest_mode"] == "truck"
+    assert body["transit_days"] == {"truck": 1, "rail": 2}
+    assert body["premium_rm_per_day_saved"] > 0
 
 
 def test_quote_errors(client):
@@ -82,10 +74,10 @@ def test_rates_and_destinations(client):
 
 
 def test_chat_answers_and_caches(client):
-    q = {"query": "What is the carbon footprint of 800 kg shipped 120 km by rail?"}
+    q = {"query": "Quote a 20ft plastics container to Nilai"}
     first = client.post("/chat", json=q).json()
     second = client.post("/chat", json=q).json()
-    assert first["tool_calls"][0]["name"] == "calculate_shipping_emissions"
+    assert first["tool_calls"][0]["name"] == "quote_container_job"
     assert not first["cached"] and second["cached"]
 
 
@@ -147,6 +139,8 @@ def test_route_recommendation_endpoint(client):
     assert r.status_code == 200
     rec = r.json()
     assert rec["recommended"]["carrier"] == "raillink" and len(rec["options"]) == 4
+    assert set(rec["priorities"]) == {"cost", "speed", "reliability", "safety"}
+    assert all(0 <= o["damage_rate"] < 1 for o in rec["options"])
     bad = {"job": {"destination": "Bangkok"}}
     assert client.post("/routing/recommend", json=bad).status_code == 404
 
@@ -170,6 +164,7 @@ def test_delay_endpoints(client):
 def test_haulier_endpoints(client):
     scores = client.get("/hauliers/scorecard").json()
     assert scores[0]["rank"] == 1 and {s["grade"] for s in scores} <= {"A", "B", "C", "D"}
+    assert all(len(s["compliance"]) == 6 and 0 <= s["compliance_score"] <= 1 for s in scores)
     assert client.get("/hauliers/hijau/trend").status_code == 200
     assert client.get("/hauliers/nobody/trend").status_code == 404
 
@@ -190,3 +185,16 @@ def test_document_extraction_and_records(client):
     numbers = [row["document_number"] for row in client.get("/documents/records").json()]
     assert "SPLU2610045" in numbers
     assert client.post("/documents/extract", files={"file": ("x.txt", b"hi")}).status_code == 415
+
+
+def test_operations_endpoints(client):
+    r = client.get("/operations/free-time", params={"top": 3})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["top"]) == 3 and body["containers"] >= body["overdue"]
+
+    r = client.get("/operations/margin", params={"days": 30})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["margin_pct"] < body["planned_margin_pct"]
+    assert client.get("/operations/margin", params={"days": 3}).status_code == 422
