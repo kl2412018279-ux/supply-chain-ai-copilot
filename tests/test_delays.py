@@ -104,3 +104,16 @@ def test_heavy_rain_raises_risk_and_is_explained(model):
 def test_rain_defaults_to_offline_climatology(model):
     pred = model.predict(DelayInput(destination="kuching", carrier="nusantara", eta="2026-12-10"))
     assert "offline" in pred.weather.source and pred.weather.rain_mm > 0
+
+
+def test_stale_model_is_detected(model, tmp_path):
+    import joblib
+
+    from src.delays.model import model_is_current
+
+    path = tmp_path / "old.joblib"
+    assert not model_is_current(path)  # missing
+    joblib.dump({**model.bundle, "features": ["congestion"]}, path)
+    assert not model_is_current(path)  # trained before a feature was added
+    joblib.dump(model.bundle, path)
+    assert model_is_current(path)

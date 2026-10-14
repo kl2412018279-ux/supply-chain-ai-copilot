@@ -66,10 +66,12 @@ def bootstrap() -> None:
 
         logger.info("No model found - training on %s", settings.volumes_csv_path)
         train(load_volumes(settings.volumes_csv_path), settings.model_path)
-    if settings.auto_train and not settings.delay_model_path.exists():
+    from src.delays.model import model_is_current  # noqa: PLC0415
+
+    if settings.auto_train and not model_is_current(settings.delay_model_path):
         from src.delays.model import train as train_delay_model  # noqa: PLC0415
 
-        logger.info("No delay model found - training on the shipment history")
+        logger.info("No current delay model - training on the shipment history")
         train_delay_model()
     if settings.auto_ingest and get_vector_store().count() == 0 and settings.documents_dir.exists():
         logger.info("Vector store empty - ingesting %s", settings.documents_dir)
