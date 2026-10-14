@@ -122,7 +122,7 @@ Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 
 | 3 | **AI safety & guardrails** | Pydantic schemas for every tool argument and response, injection and off-topic filters, output redaction, no text-to-SQL. `src/guardrails/` |
 | 4 | **Semantic caching** | Redis-backed (in-memory fallback), with TTL, entity fingerprinting, invalidation on document changes, and no caching of fallback answers. `src/cache/` |
 | 5 | **Resilience** | If the LLM provider fails (retired model, outage, rate limit), the rule-based agent answers with the same tools. Every external dependency (Postgres, Redis, LLM, embedding model) is optional. |
-| 6 | **Testing & CI/CD** | 192 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
+| 6 | **Testing & CI/CD** | 193 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
 
 ---
 
@@ -298,7 +298,7 @@ supply-chain-ai-copilot/
 │   ├── config.py, observability.py
 ├── notebooks/                   # 01 volume exploration, 02 training + RM projection
 ├── docker/, docker-compose.yml, Dockerfile, n8n/, scripts/
-└── tests/                       # pytest suite (192 tests)
+└── tests/                       # pytest suite (193 tests)
 ```
 
 ## Roadmap

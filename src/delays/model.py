@@ -145,6 +145,7 @@ def train(
     class_delay = df.groupby("risk")["delay_hours"].mean().round(1).to_dict()
     bundle = {
         "model": final,
+        "features": list(FEATURES),
         "metrics": metrics,
         "baselines": baselines,
         "confusion_matrix": {"labels": RISK_LABELS, "matrix": cm},
@@ -339,6 +340,15 @@ def upcoming_shipments(start: str | None = None, days: int = 14, seed: int = 21)
         seed=seed,
     )
     return df.drop(columns=["delay_hours", "risk"]).rename(columns={"date": "eta"})
+
+
+def model_is_current(path: str | Path | None = None) -> bool:
+    """False if the saved model is missing or was trained on a different feature set."""
+    path = Path(path or get_settings().delay_model_path)
+    try:
+        return path.exists() and joblib.load(path).get("features") == list(FEATURES)
+    except Exception:  # noqa: BLE001 - unreadable file: retrain
+        return False
 
 
 @lru_cache
