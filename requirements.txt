@@ -1,3 +1,7 @@
+# Prefer the CPU-only PyTorch build (pulled in by sentence-transformers). The default
+# CUDA build is several GB and too large for free hosts like Streamlit Community Cloud.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # Core / ML / API / storage / agent graph / dashboard
 -r requirements-ci.txt
 
