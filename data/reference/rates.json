@@ -1,0 +1,278 @@
+{
+  "_note": "EXAMPLE rates for a fictional Port Klang 3PL (Muara Logistics Sdn Bhd). Replace with your own contract rates. Each entry's 'source' says where the example value came from.",
+  "currency": "MYR",
+  "as_of": "2026-10",
+  "fuel": {
+    "diesel_rm_per_litre_peninsular": {
+      "value": 2.99,
+      "source": "MOF weekly APM price, 12-18 Feb 2026 (latest found); update weekly"
+    },
+    "litres_per_km_loaded": {
+      "value": 0.45,
+      "source": "Typical prime mover + loaded trailer, assumption"
+    },
+    "litres_per_km_empty": {
+      "value": 0.32,
+      "source": "Typical prime mover + empty trailer, assumption"
+    },
+    "kg_co2_per_litre_diesel": {
+      "value": 2.68,
+      "source": "Standard tank-to-wheel diesel combustion factor"
+    }
+  },
+  "truck": {
+    "maintenance_tyres_rm_per_km": {
+      "value": 0.38,
+      "source": "Assumption: servicing, tyres, repairs"
+    },
+    "fixed_cost_rm_per_hour": {
+      "value": 45.0,
+      "source": "Assumption: depreciation, insurance, road tax, permits"
+    },
+    "driver_rm_per_hour": {
+      "value": 20.0,
+      "source": "Assumption: driver wage incl. overtime"
+    },
+    "driver_trip_allowance_rm": {
+      "value": 40.0,
+      "source": "Assumption: meal/trip allowance per job"
+    },
+    "avg_speed_kmh": {
+      "value": 55.0,
+      "source": "Assumption: laden prime mover average incl. traffic"
+    },
+    "port_turnaround_hours": {
+      "value": 4.0,
+      "source": "Assumption: gate queue, lift-on/lift-off and depot time at Port Klang"
+    },
+    "max_gross_weight_kg": {
+      "value": 25000,
+      "source": "Association of Malaysian Hauliers VGM limit at Port Klang from 1 May 2025"
+    }
+  },
+  "container": {
+    "20": {
+      "tare_kg": 2200,
+      "port_handling_rm": 375.0,
+      "teu": 1
+    },
+    "40": {
+      "tare_kg": 3750,
+      "port_handling_rm": 562.5,
+      "teu": 2
+    },
+    "_source": "Port handling: Westports container tariff effective 1 Jan 2026 (import/export move)"
+  },
+  "customs": {
+    "declaration_rm": {
+      "value": 150.0,
+      "source": "Assumption: K1 (import) / K2 (export) declaration via uCustoms"
+    },
+    "per_container_rm": {
+      "value": 30.0,
+      "source": "Assumption: inspection coordination per container"
+    }
+  },
+  "cargo": {
+    "general": {
+      "haulage_surcharge_pct": 0,
+      "fixed_fee_rm": 0,
+      "warehouse_multiplier": 1.0,
+      "label": "General cargo"
+    },
+    "plastics": {
+      "haulage_surcharge_pct": 0,
+      "fixed_fee_rm": 0,
+      "warehouse_multiplier": 1.0,
+      "label": "Plastics / resin"
+    },
+    "palm-oil": {
+      "haulage_surcharge_pct": 10,
+      "fixed_fee_rm": 150.0,
+      "warehouse_multiplier": 1.0,
+      "label": "Palm oil (flexitank / ISO tank)"
+    },
+    "chemicals": {
+      "haulage_surcharge_pct": 25,
+      "fixed_fee_rm": 120.0,
+      "warehouse_multiplier": 1.8,
+      "label": "Chemicals (dangerous goods)"
+    },
+    "_source": "Assumptions: DG surcharge + DG documentation; palm oil tank inspection/heating fee"
+  },
+  "warehouse": {
+    "storage_rm_per_pallet_day": {
+      "value": 1.2,
+      "source": "Assumption"
+    },
+    "handling_rm_per_pallet": {
+      "value": 8.0,
+      "source": "Assumption: in + out handling"
+    }
+  },
+  "rail": {
+    "rm_per_container_km": {
+      "20": 1.1,
+      "40": 1.6
+    },
+    "first_last_mile_km": 25,
+    "kg_co2e_per_tonne_km": 0.028,
+    "_source": "Assumption: KTMB intermodal linehaul; GLEC-style rail factor"
+  },
+  "sea": {
+    "rm_per_container": {
+      "20": 2800.0,
+      "40": 4200.0
+    },
+    "kg_co2e_per_tonne_km": 0.016,
+    "_source": "Assumption: Port Klang to East Malaysia coastal shipping"
+  },
+  "margin_pct": 15,
+  "origins": {
+    "westport": {
+      "km_offset": 0,
+      "label": "Westport (Pulau Indah)"
+    },
+    "northport": {
+      "km_offset": -12,
+      "label": "Northport (Port Klang)"
+    }
+  },
+  "destinations": {
+    "shah-alam": {
+      "label": "Shah Alam",
+      "km": 40,
+      "toll_rm": 20.0,
+      "region": "peninsular",
+      "modes": [
+        "truck"
+      ],
+      "aliases": []
+    },
+    "kuala-lumpur": {
+      "label": "Kuala Lumpur",
+      "km": 55,
+      "toll_rm": 25.0,
+      "region": "peninsular",
+      "modes": [
+        "truck"
+      ],
+      "aliases": [
+        "kl"
+      ]
+    },
+    "nilai": {
+      "label": "Nilai",
+      "km": 75,
+      "toll_rm": 30.0,
+      "region": "peninsular",
+      "modes": [
+        "truck"
+      ],
+      "aliases": []
+    },
+    "seremban": {
+      "label": "Seremban",
+      "km": 90,
+      "toll_rm": 35.0,
+      "region": "peninsular",
+      "modes": [
+        "truck"
+      ],
+      "aliases": [
+        "negeri sembilan"
+      ]
+    },
+    "melaka": {
+      "label": "Melaka",
+      "km": 160,
+      "toll_rm": 45.0,
+      "region": "peninsular",
+      "modes": [
+        "truck"
+      ],
+      "aliases": [
+        "malacca"
+      ]
+    },
+    "ipoh": {
+      "label": "Ipoh",
+      "km": 230,
+      "toll_rm": 60.0,
+      "region": "peninsular",
+      "modes": [
+        "truck",
+        "rail"
+      ],
+      "aliases": [
+        "perak"
+      ]
+    },
+    "kuantan": {
+      "label": "Kuantan",
+      "km": 290,
+      "toll_rm": 70.0,
+      "region": "peninsular",
+      "modes": [
+        "truck"
+      ],
+      "aliases": [
+        "pahang"
+      ]
+    },
+    "pasir-gudang": {
+      "label": "Pasir Gudang (Johor)",
+      "km": 360,
+      "toll_rm": 90.0,
+      "region": "peninsular",
+      "modes": [
+        "truck"
+      ],
+      "aliases": [
+        "johor",
+        "jb",
+        "johor bahru"
+      ]
+    },
+    "penang-prai": {
+      "label": "Prai (Penang)",
+      "km": 370,
+      "toll_rm": 100.0,
+      "region": "peninsular",
+      "modes": [
+        "truck",
+        "rail"
+      ],
+      "aliases": [
+        "penang",
+        "butterworth"
+      ]
+    },
+    "kuching": {
+      "label": "Kuching (Sarawak)",
+      "km": 1050,
+      "toll_rm": 0.0,
+      "region": "east",
+      "modes": [
+        "sea"
+      ],
+      "aliases": [
+        "sarawak"
+      ]
+    },
+    "kota-kinabalu": {
+      "label": "Kota Kinabalu (Sabah)",
+      "km": 1650,
+      "toll_rm": 0.0,
+      "region": "east",
+      "modes": [
+        "sea"
+      ],
+      "aliases": [
+        "sabah",
+        "kk"
+      ]
+    },
+    "_source": "Approximate road km / class-3 tolls one way from Westport; sea km approximate. Examples only."
+  }
+}

@@ -1,4 +1,4 @@
-"""FastAPI service exposing the copilot, forecaster, emission calculator and RAG.
+"""FastAPI service: freight ops copilot, RM quotes, TEU forecasts and document search.
 
 Run locally::
 
@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 
 from src.agent.copilot import SupplyChainCopilot, get_copilot
 from src.config import get_settings
+from src.costing.quote import Quote, QuoteComparison, QuoteRequest, build_quote, compare_modes
+from src.costing.rates import get_rate_card
 from src.forecasting.esg_calculator import EmissionResult, TransportMode, calculate_emissions
 from src.forecasting.predict import (
     MAX_HORIZON_DAYS,
@@ -28,7 +30,7 @@ from src.forecasting.predict import (
     ModelNotTrainedError,
     get_forecaster,
 )
-from src.forecasting.sales_repository import SalesSummary, get_sales_repository
+from src.forecasting.volume_repository import VolumeSummary, get_volume_repository
 from src.guardrails.schemas import CopilotResponse, Source
 from src.observability import metrics
 from src.rag.ingest_pdf import SUPPORTED_SUFFIXES, ingest_bytes, ingest_directory
@@ -45,13 +47,13 @@ def bootstrap() -> None:
     if (
         settings.auto_train
         and not settings.model_path.exists()
-        and settings.sales_csv_path.exists()
+        and settings.volumes_csv_path.exists()
     ):
-        from src.forecasting.data import load_sales  # noqa: PLC0415
+        from src.forecasting.data import load_volumes  # noqa: PLC0415
         from src.forecasting.train import train  # noqa: PLC0415
 
-        logger.info("No model found - training on %s", settings.sales_csv_path)
-        train(load_sales(settings.sales_csv_path), settings.model_path)
+        logger.info("No model found - training on %s", settings.volumes_csv_path)
+        train(load_volumes(settings.volumes_csv_path), settings.model_path)
     if settings.auto_ingest and get_vector_store().count() == 0 and settings.documents_dir.exists():
         logger.info("Vector store empty - ingesting %s", settings.documents_dir)
         ingest_directory(settings.documents_dir)
@@ -67,9 +69,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Supply Chain AI Copilot API",
-    version="0.1.0",
-    description="Demand forecasting, shipping emissions, ESG document search and an AI copilot.",
+    title="Freight Ops Copilot API",
+    version="0.2.0",
+    description="Port Klang 3PL copilot: RM job quotes with CO2e, container-volume forecasts, "
+    "operations-manual search and an AI agent.",
     lifespan=lifespan,
 )
 
@@ -83,7 +86,7 @@ class ChatRequest(BaseModel):
 
 
 class ForecastRequest(BaseModel):
-    sku: str = Field(min_length=1, max_length=64)
+    commodity: str = Field(min_length=1, max_length=64)
     horizon_days: int = Field(default=14, ge=1, le=MAX_HORIZON_DAYS)
 
 
@@ -93,9 +96,9 @@ class ForecastPoint(BaseModel):
 
 
 class ForecastResponse(BaseModel):
-    sku: str
+    commodity: str
     horizon_days: int
-    total_units: float
+    total_teu: float
     forecast: list[ForecastPoint]
     model_metrics: dict[str, float]
 
@@ -166,22 +169,55 @@ def forecast(
     req: ForecastRequest, forecaster: DemandForecaster = Depends(forecaster_dep)
 ) -> ForecastResponse:
     try:
-        df = forecaster.forecast(req.sku, req.horizon_days)
-        sku = forecaster.resolve_sku(req.sku)
+        df = forecaster.forecast(req.commodity, req.horizon_days)
+        commodity = forecaster.resolve_commodity(req.commodity)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     return ForecastResponse(
-        sku=sku,
+        commodity=commodity,
         horizon_days=req.horizon_days,
-        total_units=round(float(df["forecast"].sum()), 1),
+        total_teu=round(float(df["forecast"].sum()), 1),
         forecast=df.to_dict(orient="records"),
         model_metrics=forecaster.metrics,
     )
 
 
-@app.get("/skus")
-def list_skus(forecaster: DemandForecaster = Depends(forecaster_dep)) -> list[str]:
-    return forecaster.skus
+@app.get("/commodities")
+def list_commodities(forecaster: DemandForecaster = Depends(forecaster_dep)) -> list[str]:
+    return forecaster.commodities
+
+
+@app.post("/quote", response_model=Quote)
+def quote(req: QuoteRequest) -> Quote:
+    """Itemised RM quote (fuel, truck, driver, tolls, port, customs, surcharges, margin) + CO2e."""
+    try:
+        return build_quote(req)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/quote/compare", response_model=QuoteComparison)
+def quote_compare(req: QuoteRequest) -> QuoteComparison:
+    """Every transport mode offered to the destination, with the RM per tonne CO2e trade-off."""
+    try:
+        return compare_modes(req)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/destinations")
+def destinations() -> dict[str, dict[str, Any]]:
+    return get_rate_card().destinations
+
+
+@app.get("/rates")
+def rates() -> dict[str, Any]:
+    """The full rate card (example rates; edit data/reference/rates.json)."""
+    return get_rate_card().data
 
 
 @app.post("/emissions", response_model=EmissionResult)
@@ -189,14 +225,14 @@ def emissions(req: EmissionRequest) -> EmissionResult:
     return calculate_emissions(req.distance_km, req.weight_kg, req.mode.value)
 
 
-@app.get("/sales/summary", response_model=SalesSummary)
-def sales_summary(
-    sku: str | None = Query(default=None, max_length=64),
+@app.get("/volumes/summary", response_model=VolumeSummary)
+def volume_summary(
+    commodity: str | None = Query(default=None, max_length=64),
     start_date: date | None = None,
     end_date: date | None = None,
-) -> SalesSummary:
+) -> VolumeSummary:
     try:
-        return get_sales_repository().summary(sku, start_date, end_date)
+        return get_volume_repository().summary(commodity, start_date, end_date)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

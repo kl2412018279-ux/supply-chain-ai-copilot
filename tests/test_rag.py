@@ -64,9 +64,9 @@ def test_hybrid_search_finds_exact_policy_clause(embedder):
     store = InMemoryVectorStore()
     ingest_bytes(SAMPLE_PDF.read_bytes(), SAMPLE_PDF.name, store, embedder)
     retriever = HybridRetriever(store, embedder, LexicalReranker())
-    results = retriever.search("UN3480 dangerous goods SKU-104", k=3)
+    results = retriever.search("K8 transshipment form", k=3)
     assert results
-    assert "UN3480" in results[0].chunk.text
+    assert "K8" in results[0].chunk.text
     assert results[0].chunk.page is not None
 
 

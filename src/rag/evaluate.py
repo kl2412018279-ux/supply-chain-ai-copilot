@@ -1,6 +1,7 @@
 """Retrieval evaluation: compare dense-only, keyword-only, hybrid and hybrid+rerank.
 
-Each labelled question names a phrase that must appear in a retrieved chunk.
+Each labelled question names a phrase that must appear in a retrieved chunk
+(questions are written for ``data/raw/operations_manual.pdf``).
 Reports hit@k and MRR so retrieval changes are measured, not guessed.
 
     python -m src.rag.evaluate --k 3
@@ -18,28 +19,31 @@ from src.rag.reranker import Reranker, get_reranker
 from src.rag.retriever import HybridRetriever, reciprocal_rank_fusion
 from src.rag.vector_store import InMemoryVectorStore
 
-# (question, phrase that a correct chunk contains) - for the bundled sample policy.
+# (question, phrase that a correct chunk contains) - for the bundled operations manual.
 EVAL_SET: list[tuple[str, str]] = [
-    ("Can lithium battery packs go on passenger planes?", "UN3480"),
-    ("Which product is classified as dangerous goods?", "UN3480"),
-    ("When is air freight allowed?", "Regional Logistics Director"),
-    ("What is the net-zero target year?", "2045"),
-    ("How much must scope 1 and 2 emissions fall by 2030?", "50 percent by 2030"),
-    ("What is the emission factor for ocean shipping?", "ocean freight 0.016"),
-    ("Long shipments in Europe should use which transport?", "intermodal"),
-    ("What share of spend must be with suppliers that have SBTi targets?", "80 percent"),
-    ("Renewable electricity requirement for suppliers", "renewable electricity"),
-    ("Which labour code of conduct must suppliers follow?", "Responsible Business Alliance"),
-    ("Maximum weekly working hours for supplier staff", "60 hours"),
-    ("Packaging plastic-free requirement", "plastic-free"),
-    ("How much recycled aluminium is in SKU-105?", "post-consumer recycled aluminium"),
-    ("Take-back programme collection target for monitors", "40 percent collection"),
-    ("How is safety stock calculated?", "1.65 standard deviations"),
-    ("Excess inventory write-off escalation threshold", "2 percent"),
-    ("How often does the board review sustainability progress?", "every quarter"),
-    ("Which disclosure standards are used for ESG reporting?", "IFRS S2"),
-    ("How can employees report policy breaches?", "ethics hotline"),
-    ("Who reviews ML demand forecasts before purchase orders?", "category planners"),
+    ("Which customs form is used for imports?", "Form K1"),
+    ("What form do we use for transshipment between customs areas?", "Form K8"),
+    ("What documents support a customs declaration?", "commercial invoice, packing list"),
+    ("Can we pay import duties on behalf of a forwarder?", "signed indemnity"),
+    ("How old can a safety data sheet be?", "no older than five years"),
+    ("What licence do drivers need to carry dangerous goods?", "GDL"),
+    ("How far apart must flammable liquids and oxidisers be stored?", "at least 3 metres"),
+    (
+        "How quickly must DG containers be collected from the terminal?",
+        "within 24 hours of discharge",
+    ),
+    ("What temperature should crude palm oil be heated to?", "between 50 and 55 degrees"),
+    ("Which certificate is required for palm oil exports?", "MSPO"),
+    ("When is the palm oil peak season?", "September to November"),
+    ("Do we handle plastic waste or scrap?", "does not handle plastic waste"),
+    ("What is the maximum gross weight of a container on our trailers?", "25,000 kg"),
+    ("Which destinations can use rail?", "Ipoh and Prai"),
+    ("How are shipments to Sabah and Sarawak moved?", "coastal shipping"),
+    ("What is the difference between demurrage and detention?", "Detention is charged"),
+    ("How many free days of port storage are typical at Port Klang?", "3 days for port storage"),
+    ("How much more does dangerous goods storage cost?", "1.8 times"),
+    ("How long is a quotation valid?", "valid for 7 days"),
+    ("What is the fleet emissions reduction target?", "30 percent by 2030"),
 ]
 
 

@@ -1,6 +1,8 @@
 """Render a plain-text/markdown file to a minimal multi-page PDF (no dependencies).
 
-Usage: python scripts/make_sample_pdf.py scripts/sample_docs/esg_policy.md data/raw/esg_policy.pdf
+Usage:
+    python scripts/make_sample_pdf.py \
+        scripts/sample_docs/operations_manual.md data/raw/operations_manual.pdf
 """
 
 from __future__ import annotations

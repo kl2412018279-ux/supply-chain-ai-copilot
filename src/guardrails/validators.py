@@ -146,8 +146,17 @@ DOMAIN_TERMS = {
     "battery",
     "dangerous",
     "goods",
-}
-_SKU_RE = re.compile(r"\bsku[-_ ]?\d+\b", re.IGNORECASE)
+    # freight forwarding & port operations (Malaysia)
+    "forwarder", "forwarding", "haulage", "haulier", "prime", "mover", "trailer",
+    "teu", "teus", "containers", "20ft", "40ft", "ft", "port", "klang", "westport", "northport",
+    "terminal", "customs", "clearance", "declaration", "k1", "k2", "k8", "ucustoms", "permit",
+    "permits", "duty", "duties", "quote", "quotation", "price", "pricing", "cost", "costs",
+    "rm", "ringgit", "rate", "rates", "toll", "tolls", "diesel", "fuel", "maintenance", "driver",
+    "demurrage", "detention", "storage", "pallets", "palm", "oil", "cpo", "mspo", "mpob",
+    "flexitank", "chemical", "chemicals", "sds", "msds", "un", "plastic", "plastics", "resin",
+    "spend", "budget", "revenue", "volume", "volumes", "malaysia", "penang", "johor", "sabah",
+    "sarawak", "ipoh", "kuantan", "melaka", "shah", "alam", "kl", "kuching", "kinabalu",
+}  # fmt: skip
 _GREETING_RE = re.compile(
     r"^\s*(hi|hello|hey|thanks|thank you|help|what can you do)\b[\s!?.]*$", re.IGNORECASE
 )
@@ -173,7 +182,7 @@ def check_input(query: str) -> GuardrailResult:
                 category=GuardrailCategory.prompt_injection,
                 reason="The request looks like a prompt-injection attempt and was blocked.",
             )
-    if _GREETING_RE.match(text) or _SKU_RE.search(text):
+    if _GREETING_RE.match(text):
         return GuardrailResult(allowed=True, category=GuardrailCategory.ok)
     words = set(_WORD_RE.findall(text.lower()))
     if not words & DOMAIN_TERMS:

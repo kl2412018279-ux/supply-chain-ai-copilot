@@ -18,7 +18,56 @@ def _tool_names(output):
     return [c.name for c in output.tool_calls]
 
 
-def test_routes_emission_question(agent):
+def test_routes_quote_with_parsed_parameters(agent):
+    out = agent.run("Quote 2 x 40ft palm oil containers from Northport to Pasir Gudang, 20 tonnes")
+    assert _tool_names(out) == ["quote_container_job"]
+    args = out.tool_calls[0].arguments
+    assert args["destination"] == "pasir-gudang" and args["container_size"] == "40"
+    assert args["containers"] == 2 and args["cargo_type"] == "palm-oil"
+    assert args["origin"] == "northport" and args["cargo_weight_kg"] == 20000
+    assert "Price: RM" in out.answer and "CO2e" in out.answer
+
+
+def test_quote_includes_warehousing(agent):
+    out = agent.run("How much for a 20ft of plastics to Shah Alam with 20 pallets 5 days storage?")
+    args = out.tool_calls[0].arguments
+    assert args["warehouse_pallets"] == 20 and args["warehouse_days"] == 5
+    assert "warehouse RM" in out.answer
+
+
+def test_long_haul_quote_compares_modes(agent):
+    out = agent.run("Compare truck vs rail for a 40ft chemicals container to Penang")
+    assert _tool_names(out) == ["compare_transport_modes"]
+    assert "**truck**" in out.answer and "**rail**" in out.answer
+
+
+def test_routes_forecast_with_horizon_in_weeks(agent):
+    out = agent.run("Forecast palm oil volume for the next 2 weeks")
+    assert _tool_names(out) == ["forecast_container_volume"]
+    assert out.tool_calls[0].arguments == {"commodity": "palm-oil", "horizon_days": 14}
+    assert len(out.tool_calls[0].output["daily"]) == 14
+    assert "TEU" in out.answer
+
+
+def test_forecast_several_commodities(agent):
+    out = agent.run("Forecast chemicals and plastics volumes for 7 days")
+    assert [c.arguments["commodity"] for c in out.tool_calls] == ["chemicals", "plastics"]
+
+
+def test_projected_spend(agent):
+    out = agent.run("Projected haulage spend for chemicals next month")
+    assert _tool_names(out) == ["estimate_haulage_spend"]
+    assert out.tool_calls[0].arguments["horizon_days"] == 30
+    assert "Cost ≈ **RM" in out.answer
+
+
+def test_volume_history(agent):
+    out = agent.run("Show volume history for plastics")
+    assert _tool_names(out) == ["get_volume_summary"]
+    assert "plastics" in out.answer and "TEU" in out.answer
+
+
+def test_routes_generic_emission_question(agent):
     out = agent.run("Carbon footprint of shipping 2 tonnes 400 km by rail?")
     assert _tool_names(out) == ["calculate_shipping_emissions"]
     args = out.tool_calls[0].arguments
@@ -26,34 +75,24 @@ def test_routes_emission_question(agent):
     assert "22.40 kg CO2e" in out.answer
 
 
-def test_routes_forecast_with_horizon_in_weeks(agent):
-    out = agent.run("Predict demand for SKU-102 for the next 2 weeks")
-    assert _tool_names(out) == ["forecast_demand"]
-    assert out.tool_calls[0].arguments == {"sku": "SKU-102", "horizon_days": 14}
-    assert len(out.tool_calls[0].output["daily"]) == 14
+def test_procedure_question_searches_manual_and_cites_sources(agent):
+    out = agent.run("What temperature should CPO be heated to before discharge?")
+    assert _tool_names(out) == ["search_operations_documents"]
+    assert out.sources and out.sources[0].source == "operations_manual.pdf"
+    assert "55 degrees" in out.answer and "operations_manual.pdf" in out.answer
 
 
-def test_multi_intent_question_calls_several_tools(agent):
-    out = agent.run("Forecast SKU-101 for 7 days and the emissions of 500kg over 300km by truck")
-    assert set(_tool_names(out)) == {"forecast_demand", "calculate_shipping_emissions"}
+def test_tool_errors_are_returned_not_raised(trained_model):
+    from src.agent.tools import ToolRecorder
 
-
-def test_policy_question_searches_documents_and_cites_sources(agent):
-    out = agent.run("Can SKU-104 battery packs be shipped by air?")
-    assert _tool_names(out) == ["search_esg_documents"]
-    assert out.sources and out.sources[0].source == "esg_policy.pdf"
-    assert "esg_policy.pdf" in out.answer
-
-
-def test_sales_summary(agent):
-    out = agent.run("Show the sales history for SKU-103")
-    assert _tool_names(out) == ["get_sales_summary"]
-    assert out.tool_calls[0].output["by_sku"][0]["sku"] == "SKU-103"
-
-
-def test_unknown_sku_is_reported_not_raised(agent):
-    out = agent.run("Forecast demand for SKU-999 for 7 days")
-    assert "Unknown SKU" in out.answer
+    recorder = ToolRecorder()
+    out = recorder.run("quote_container_job", destination="Bangkok")
+    assert "Unknown destination" in out["error"]
+    out = recorder.run("forecast_container_volume", commodity="bananas")
+    assert "Unknown commodity" in out["error"]
+    out = recorder.run("quote_container_job", destination="KL", container_size="45")
+    assert "container_size" in out["error"]  # schema validation errors come back too
+    assert len(recorder.calls) == 3
 
 
 def test_build_agent_falls_back_without_api_key():
@@ -79,10 +118,12 @@ def test_copilot_blocks_before_calling_agent(embedder):
 def test_copilot_serves_second_identical_question_from_cache(agent, embedder):
     cache = SemanticCache(embedder, InMemoryCacheBackend(), threshold=0.95)
     copilot = SupplyChainCopilot(agent, cache)
-    first = copilot.ask("Emissions for 500 kg shipped 300 km by truck?")
-    second = copilot.ask("emissions for 500 kg shipped 300 km by truck")
+    first = copilot.ask("Quote a 40ft container to Shah Alam?")
+    second = copilot.ask("quote a 40ft container to shah alam")
+    third = copilot.ask("Quote a 40ft container to Ipoh")
     assert not first.cached and second.cached
     assert second.answer == first.answer
+    assert not third.cached  # same numbers, different destination
 
 
 def test_copilot_survives_agent_errors():
@@ -92,7 +133,7 @@ def test_copilot_survives_agent_errors():
         def run(self, query):
             raise RuntimeError("LLM provider down")
 
-    response = SupplyChainCopilot(BrokenAgent()).ask("Forecast SKU-101")
+    response = SupplyChainCopilot(BrokenAgent()).ask("Forecast chemicals volume")
     assert "internal error" in response.answer
 
 
@@ -105,11 +146,11 @@ def test_copilot_falls_back_when_llm_agent_fails(agent, embedder):
 
     cache = SemanticCache(embedder, InMemoryCacheBackend(), threshold=0.95)
     copilot = SupplyChainCopilot(BrokenAgent(), cache, fallback=agent)
-    response = copilot.ask("Emissions for 500 kg shipped 300 km by truck")
+    response = copilot.ask("Carbon footprint of 500 kg shipped 300 km by truck")
     assert "15.75 kg CO2e" in response.answer
     assert response.agent == "rule-based (fallback: langgraph failed)"
     # fallback answers are not cached, so the LLM is retried next time
-    assert not copilot.ask("Emissions for 500 kg shipped 300 km by truck").cached
+    assert not copilot.ask("Carbon footprint of 500 kg shipped 300 km by truck").cached
 
 
 def test_copilot_redacts_agent_output():
@@ -119,9 +160,9 @@ def test_copilot_redacts_agent_output():
         def run(self, query):
             from src.agent.workflow import AgentOutput
 
-            return AgentOutput(answer="Contact ops@example.com for the SKU-101 forecast")
+            return AgentOutput(answer="Contact ops@example.com for the chemicals forecast")
 
-    response = SupplyChainCopilot(LeakyAgent()).ask("Forecast SKU-101")
+    response = SupplyChainCopilot(LeakyAgent()).ask("Forecast chemicals volume")
     assert "ops@example.com" not in response.answer
 
 
