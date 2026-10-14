@@ -48,6 +48,10 @@
     "max_gross_weight_kg": {
       "value": 25000,
       "source": "Association of Malaysian Hauliers VGM limit at Port Klang from 1 May 2025"
+    },
+    "shift_hours": {
+      "value": 11.0,
+      "source": "Assumption: driver working hours per day, for fleet sizing"
     }
   },
   "container": {
@@ -131,11 +135,15 @@
   "origins": {
     "westport": {
       "km_offset": 0,
-      "label": "Westport (Pulau Indah)"
+      "label": "Westport (Pulau Indah)",
+      "lat": 2.9667,
+      "lon": 101.3
     },
     "northport": {
       "km_offset": -12,
-      "label": "Northport (Port Klang)"
+      "label": "Northport (Port Klang)",
+      "lat": 3.0,
+      "lon": 101.36
     }
   },
   "destinations": {
@@ -147,7 +155,9 @@
       "modes": [
         "truck"
       ],
-      "aliases": []
+      "aliases": [],
+      "lat": 3.0733,
+      "lon": 101.5185
     },
     "kuala-lumpur": {
       "label": "Kuala Lumpur",
@@ -159,7 +169,9 @@
       ],
       "aliases": [
         "kl"
-      ]
+      ],
+      "lat": 3.139,
+      "lon": 101.6869
     },
     "nilai": {
       "label": "Nilai",
@@ -169,7 +181,9 @@
       "modes": [
         "truck"
       ],
-      "aliases": []
+      "aliases": [],
+      "lat": 2.8197,
+      "lon": 101.7966
     },
     "seremban": {
       "label": "Seremban",
@@ -181,7 +195,9 @@
       ],
       "aliases": [
         "negeri sembilan"
-      ]
+      ],
+      "lat": 2.7258,
+      "lon": 101.9424
     },
     "melaka": {
       "label": "Melaka",
@@ -193,7 +209,9 @@
       ],
       "aliases": [
         "malacca"
-      ]
+      ],
+      "lat": 2.1896,
+      "lon": 102.2501
     },
     "ipoh": {
       "label": "Ipoh",
@@ -206,7 +224,9 @@
       ],
       "aliases": [
         "perak"
-      ]
+      ],
+      "lat": 4.5975,
+      "lon": 101.0901
     },
     "kuantan": {
       "label": "Kuantan",
@@ -218,7 +238,9 @@
       ],
       "aliases": [
         "pahang"
-      ]
+      ],
+      "lat": 3.8077,
+      "lon": 103.326
     },
     "pasir-gudang": {
       "label": "Pasir Gudang (Johor)",
@@ -232,7 +254,9 @@
         "johor",
         "jb",
         "johor bahru"
-      ]
+      ],
+      "lat": 1.4703,
+      "lon": 103.9032
     },
     "penang-prai": {
       "label": "Prai (Penang)",
@@ -246,7 +270,9 @@
       "aliases": [
         "penang",
         "butterworth"
-      ]
+      ],
+      "lat": 5.38,
+      "lon": 100.39
     },
     "kuching": {
       "label": "Kuching (Sarawak)",
@@ -258,7 +284,9 @@
       ],
       "aliases": [
         "sarawak"
-      ]
+      ],
+      "lat": 1.5533,
+      "lon": 110.3592
     },
     "kota-kinabalu": {
       "label": "Kota Kinabalu (Sabah)",
@@ -271,7 +299,9 @@
       "aliases": [
         "sabah",
         "kk"
-      ]
+      ],
+      "lat": 5.9804,
+      "lon": 116.0735
     },
     "_source": "Approximate road km / class-3 tolls one way from Westport; sea km approximate. Examples only."
   }

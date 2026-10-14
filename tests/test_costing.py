@@ -135,3 +135,16 @@ def test_invalid_requests_rejected():
 
 def test_default_rate_card_loads():
     assert get_rate_card().value("fuel", "diesel_rm_per_litre_peninsular") > 0
+
+
+def test_what_if_overrides_do_not_touch_original(rates):
+    base = build_quote(QuoteRequest(destination="Ipoh"), rates)
+    pricier = rates.with_overrides(diesel_rm_per_litre=3.99, margin_pct=20)
+    q = build_quote(QuoteRequest(destination="Ipoh"), pricier)
+    assert q.price_rm > base.price_rm and q.margin_pct == 20
+    assert rates.value("fuel", "diesel_rm_per_litre_peninsular") == 2.99  # unchanged
+
+
+def test_trip_hours(rates):
+    # 40 km each way at 55 km/h + 4 h port turnaround
+    assert rates.trip_hours("Shah Alam") == pytest.approx(80 / 55 + 4)

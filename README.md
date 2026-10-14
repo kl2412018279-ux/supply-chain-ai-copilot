@@ -11,6 +11,12 @@ An AI copilot for a **Malaysian third-party logistics (3PL) provider at Port Kla
 
 > **Case study, not a real company.** The copilot is built for *Muara Logistics Sdn Bhd*, a **fictional** company modelled on typical Port Klang ground-handling 3PLs. All volumes are synthetic, and all rates are clearly labelled examples, see [Rate card](#rate-card-rm). This is an independent portfolio project, not affiliated with any company.
 
+| Quote builder | Volume forecast |
+|---|---|
+| ![Quote page: itemised RM cost breakdown](docs/images/quote.png) | ![Forecast page: weekly TEU actual vs forecast](docs/images/forecast.png) |
+| **Truck vs rail (dark mode)** | **Operations manual search** |
+| ![Mode comparison in dark mode](docs/images/modes-dark.png) | ![Hybrid document search with highlighted matches](docs/images/documents.png) |
+
 ## What it does
 
 | Question an ops team asks | What the copilot does |
@@ -231,7 +237,9 @@ docker compose up -d postgres redis && make test-all   # + pgvector/Redis integr
 
 ```
 supply-chain-ai-copilot/
-├── app.py                       # Streamlit: Copilot | Quote & Cost | Volume Forecast | Documents
+├── app.py                       # Streamlit entry: sidebar + top navigation
+├── views/                       # pages: copilot, quote, forecast, documents (+ shared chart style)
+├── .streamlit/config.toml       # light/dark theme
 ├── data/
 │   ├── raw/                     # container_volumes.csv, operations_manual.pdf
 │   └── reference/rates.json     # RM rate card (example values + sources)
