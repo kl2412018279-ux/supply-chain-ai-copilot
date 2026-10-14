@@ -1,7 +1,7 @@
 [project]
 name = "supply-chain-ai-copilot"
 version = "0.1.0"
-description = "Freight Ops Copilot for a Port Klang 3PL: RM job quotes and carrier planning, LightGBM TEU forecasting, hybrid RAG, LangGraph agent."
+description = "Freight Ops Copilot: an AI logistics operations platform for a Port Klang 3PL (control tower, RM quoting, carrier planning, delay risk, TEU forecasting, document intake, hybrid RAG, LangGraph agent)."
 requires-python = ">=3.10"
 
 [tool.ruff]

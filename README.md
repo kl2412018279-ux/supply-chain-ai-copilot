@@ -1,15 +1,17 @@
-# 🚛 Freight Ops Copilot: AI for a Port Klang 3PL
+# 🚛 Freight Ops Copilot: an AI logistics operations platform for a Port Klang 3PL
 
 [![Live demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://supply-chain-ai-copilot-rul.streamlit.app/)
 [![CI](https://github.com/kl2412018279-ux/supply-chain-ai-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/kl2412018279-ux/supply-chain-ai-copilot/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Cost](https://img.shields.io/badge/running%20cost-%240-brightgreen)
 
-**🚀 [Live demo](https://supply-chain-ai-copilot-rul.streamlit.app/)**: try the copilot in your browser. The free host sleeps when idle, so the first load can take about 30 seconds.
+**🚀 [Live demo](https://supply-chain-ai-copilot-rul.streamlit.app/)**: try the platform in your browser. The free host sleeps when idle, so the first load can take about 30 seconds.
 
-An AI copilot for a **Malaysian third-party logistics (3PL) provider at Port Klang**: the kind of company that handles customs clearance, container haulage, warehousing and final delivery of **chemicals, palm oil and plastics** for international freight forwarders.
+An **AI-powered logistics operations platform** for a **Malaysian third-party logistics (3PL) provider at Port Klang**: the kind of company that handles customs clearance, container haulage, warehousing and final delivery of **chemicals, palm oil and plastics** for international freight forwarders.
 
-> **Case study, not a real company.** The copilot is built for *Muara Logistics Sdn Bhd*, a **fictional** company modelled on typical Port Klang ground-handling 3PLs. All volumes are synthetic, and all rates are clearly labelled examples, see [Rate card](#rate-card-rm). This is an independent portfolio project, not affiliated with any company.
+It is a web application that brings the ops team's daily tools into one place: a **control tower** for demurrage and margin, **RM quoting**, a **route & carrier planner**, **delay-risk prediction**, **volume forecasting**, **document intake**, a **haulier scorecard** and an **AI copilot** (chat assistant) that answers questions by calling the same tools. Everything shares one database, one REST API and one agent layer.
+
+> **Case study, not a real company.** The platform is built for *Muara Logistics Sdn Bhd*, a **fictional** company modelled on typical Port Klang ground-handling 3PLs. All volumes are synthetic, and all rates are clearly labelled examples, see [Rate card](#rate-card-rm). This is an independent portfolio project, not affiliated with any company.
 
 ![Control tower: free-time clock, margin leakage and arrivals at risk](docs/images/control-tower.png)
 
@@ -23,7 +25,7 @@ An AI copilot for a **Malaysian third-party logistics (3PL) provider at Port Kla
 
 ## What it does
 
-| Question an ops team asks | What the copilot does |
+| Question an ops team asks | What the platform does |
 |---|---|
 | *"Which containers are about to incur demurrage?"* | **Control tower / free-time clock**: every live import box with its last free day, **demurrage + port storage** until gate-out and **detention** until the empty is returned, RM already accrued and RM at the planned move, and the next action (book a haulier, chase the K1 release, return the empty). |
 | *"Where are we losing margin?"* | **Margin leakage** over the job log: quoted vs actual gross margin and the RM lost to each leak (unbilled waiting time, demurrage/detention absorbed, late-delivery penalties, damage claims, diesel above quote), by customer and by lane, with the loss-making jobs listed. |
