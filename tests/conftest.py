@@ -22,6 +22,7 @@ os.environ.update(
         "EMBEDDING_BACKEND": "hashing",
         "RERANKER_BACKEND": "lexical",
         "MODEL_PATH": str(_TMP / "demand_model.joblib"),
+        "DELAY_MODEL_PATH": str(_TMP / "delay_model.joblib"),
         "LANGSMITH_API_KEY": "",
         "MLFLOW_TRACKING_URI": "",
         "AUTO_TRAIN": "false",
@@ -48,6 +49,15 @@ def trained_model(volumes_df):
     from src.forecasting.train import train
 
     return train(volumes_df, model_path=get_settings().model_path, holdout_days=28)
+
+
+@pytest.fixture(scope="session")
+def delay_model():
+    from src.delays.data import generate_shipments
+    from src.delays.model import DelayModel, train
+
+    train(generate_shipments(start="2025-06-01", end="2026-06-30", per_day=6))
+    return DelayModel.load()
 
 
 @pytest.fixture(scope="session")
