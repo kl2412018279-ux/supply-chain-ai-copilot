@@ -4,7 +4,7 @@ install:        ## full install (agent, embeddings, MLflow)
 	pip install -r requirements.txt
 install-dev:    ## lightweight install (what CI uses)
 	pip install -r requirements-ci.txt
-data:           ## regenerate synthetic sales CSV
+data:           ## regenerate synthetic container-volume CSV
 	python -m src.forecasting.data
 train:          ## train LightGBM with grid search + MLflow tracking
 	python -m src.forecasting.train --tune --mlflow

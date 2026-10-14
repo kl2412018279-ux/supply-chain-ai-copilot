@@ -2,12 +2,12 @@
 -- The application also creates these objects idempotently on startup.
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Structured sales history (loaded from data/raw/sample_sales.csv on first API start)
-CREATE TABLE IF NOT EXISTS sales (
-    date  DATE    NOT NULL,
-    sku   TEXT    NOT NULL,
-    sales NUMERIC NOT NULL CHECK (sales >= 0),
-    PRIMARY KEY (sku, date)
+-- Daily container volumes (loaded from data/raw/container_volumes.csv on first API start)
+CREATE TABLE IF NOT EXISTS container_volumes (
+    date      DATE    NOT NULL,
+    commodity TEXT    NOT NULL,
+    teu       NUMERIC NOT NULL CHECK (teu >= 0),
+    PRIMARY KEY (commodity, date)
 );
 
 -- Document chunks: dense embedding (pgvector) + full-text index in one table

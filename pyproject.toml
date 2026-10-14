@@ -1,7 +1,7 @@
 [project]
 name = "supply-chain-ai-copilot"
 version = "0.1.0"
-description = "Enterprise supply chain & ESG AI copilot: LightGBM demand forecasting, hybrid RAG, LangGraph agent."
+description = "Freight Ops Copilot for a Port Klang 3PL: RM job quotes with CO2e, LightGBM TEU forecasting, hybrid RAG, LangGraph agent."
 requires-python = ">=3.10"
 
 [tool.ruff]

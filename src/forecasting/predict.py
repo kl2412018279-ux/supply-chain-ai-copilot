@@ -1,4 +1,4 @@
-"""Inference for the trained demand model (recursive multi-day forecasts)."""
+"""Inference for the trained container-volume model (recursive multi-day forecasts)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from src.config import get_settings
-from src.forecasting.data import features_from_history
+from src.forecasting.data import features_from_history, normalize_commodity
 
 MAX_HORIZON_DAYS = 90
 
@@ -25,7 +25,7 @@ class DemandForecaster:
         self.bundle = bundle
         self.model = bundle["model"]
         self.features: list[str] = bundle["features"]
-        self.skus: list[str] = bundle["sku_categories"]
+        self.commodities: list[str] = bundle["categories"]
         self.metrics: dict[str, float] = bundle.get("metrics", {})
 
     @classmethod
@@ -37,38 +37,39 @@ class DemandForecaster:
             )
         return cls(joblib.load(path))
 
-    def resolve_sku(self, sku: str) -> str:
-        normalized = sku.strip().upper()
-        for known in self.skus:
-            if known.upper() == normalized:
-                return known
-        raise KeyError(f"Unknown SKU '{sku}'. Known SKUs: {', '.join(self.skus)}")
+    def resolve_commodity(self, commodity: str) -> str:
+        normalized = normalize_commodity(commodity)
+        if normalized in self.commodities:
+            return normalized
+        raise KeyError(
+            f"Unknown commodity '{commodity}'. Known commodities: {', '.join(self.commodities)}"
+        )
 
-    def forecast(self, sku: str, horizon_days: int = 14) -> pd.DataFrame:
-        """Forecast daily demand for the ``horizon_days`` after the last observed date."""
+    def forecast(self, commodity: str, horizon_days: int = 14) -> pd.DataFrame:
+        """Forecast daily TEU for the ``horizon_days`` after the last observed date."""
         if not 1 <= horizon_days <= MAX_HORIZON_DAYS:
             raise ValueError(f"horizon_days must be between 1 and {MAX_HORIZON_DAYS}.")
-        sku = self.resolve_sku(sku)
-        sku_id = self.skus.index(sku)
-        history = np.asarray(self.bundle["history"][sku], dtype=float)
-        date = pd.Timestamp(self.bundle["last_dates"][sku])
+        commodity = self.resolve_commodity(commodity)
+        commodity_id = self.commodities.index(commodity)
+        history = np.asarray(self.bundle["history"][commodity], dtype=float)
+        date = pd.Timestamp(self.bundle["last_dates"][commodity])
 
         rows = []
         for _ in range(horizon_days):
             date += pd.Timedelta(days=1)
-            feats = features_from_history(history, date, sku_id)
+            feats = features_from_history(history, date, commodity_id)
             x = pd.DataFrame([feats], columns=self.features)
             pred = max(float(self.model.predict(x)[0]), 0.0)
             rows.append({"date": date.strftime("%Y-%m-%d"), "forecast": round(pred, 1)})
             history = np.append(history, pred)
         return pd.DataFrame(rows)
 
-    def recent_history(self, sku: str, days: int = 28) -> pd.DataFrame:
-        sku = self.resolve_sku(sku)
-        values = self.bundle["history"][sku][-days:]
-        end = pd.Timestamp(self.bundle["last_dates"][sku])
+    def recent_history(self, commodity: str, days: int = 28) -> pd.DataFrame:
+        commodity = self.resolve_commodity(commodity)
+        values = self.bundle["history"][commodity][-days:]
+        end = pd.Timestamp(self.bundle["last_dates"][commodity])
         dates = pd.date_range(end=end, periods=len(values), freq="D")
-        return pd.DataFrame({"date": dates.strftime("%Y-%m-%d"), "sales": values})
+        return pd.DataFrame({"date": dates.strftime("%Y-%m-%d"), "teu": values})
 
 
 @lru_cache
