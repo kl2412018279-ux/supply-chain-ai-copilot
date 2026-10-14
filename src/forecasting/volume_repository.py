@@ -21,6 +21,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from src.config import get_settings
+from src.db import PgConnection
 from src.forecasting.data import load_volumes, normalize_commodity
 
 logger = logging.getLogger(__name__)
@@ -105,9 +106,8 @@ class CsvVolumeRepository:
 
 class PostgresVolumeRepository:
     def __init__(self, dsn: str):
-        import psycopg  # noqa: PLC0415
 
-        self._conn = psycopg.connect(dsn, autocommit=True)
+        self._conn = PgConnection(dsn)
         self._conn.execute(VOLUMES_SCHEMA_SQL)
 
     def load_dataframe(self, df: pd.DataFrame) -> int:

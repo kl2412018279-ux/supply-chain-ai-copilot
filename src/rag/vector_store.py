@@ -17,6 +17,7 @@ from typing import Protocol
 import numpy as np
 
 from src.config import get_settings
+from src.db import PgConnection
 from src.rag.schema import Chunk
 
 logger = logging.getLogger(__name__)
@@ -124,13 +125,15 @@ CREATE INDEX IF NOT EXISTS document_chunks_tsv_idx
 
 class PgVectorStore:
     def __init__(self, dsn: str, dim: int = 384):
-        import psycopg  # noqa: PLC0415
         from pgvector.psycopg import register_vector  # noqa: PLC0415
 
         self.dim = dim
-        self._conn = psycopg.connect(dsn, autocommit=True)
-        self._conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        register_vector(self._conn)
+
+        def setup(conn) -> None:
+            conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            register_vector(conn)
+
+        self._conn = PgConnection(dsn, on_connect=setup)
         self._lock = threading.Lock()
         self.init_schema()
 
