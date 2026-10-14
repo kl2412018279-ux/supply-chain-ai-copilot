@@ -1,0 +1,71 @@
+{
+  "name": "Google Drive PDF -> Copilot ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "triggerOn": "specificFolder",
+        "folderToWatch": { "__rl": true, "value": "REPLACE_WITH_DRIVE_FOLDER_ID", "mode": "id" },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "a1f0c7d2-0001-4c1e-9a10-000000000001",
+      "name": "New file in ESG folder",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            { "value1": "={{ $json.name.toLowerCase() }}", "operation": "regex", "value2": "\\.(pdf|txt|md)$" }
+          ]
+        }
+      },
+      "id": "a1f0c7d2-0002-4c1e-9a10-000000000002",
+      "name": "Is PDF / TXT / MD?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": { "__rl": true, "value": "={{ $json.id }}", "mode": "id" },
+        "options": { "fileName": "={{ $json.name }}" }
+      },
+      "id": "a1f0c7d2-0003-4c1e-9a10-000000000003",
+      "name": "Download file",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [680, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/documents/ingest",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "data" }
+          ]
+        },
+        "options": { "timeout": 120000 }
+      },
+      "id": "a1f0c7d2-0004-4c1e-9a10-000000000004",
+      "name": "POST to Copilot /documents/ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 280]
+    }
+  ],
+  "connections": {
+    "New file in ESG folder": { "main": [[{ "node": "Is PDF / TXT / MD?", "type": "main", "index": 0 }]] },
+    "Is PDF / TXT / MD?": { "main": [[{ "node": "Download file", "type": "main", "index": 0 }], []] },
+    "Download file": { "main": [[{ "node": "POST to Copilot /documents/ingest", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

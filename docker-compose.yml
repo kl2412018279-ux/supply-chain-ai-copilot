@@ -1,0 +1,111 @@
+# Full $0 local stack:  docker compose up -d --build
+#   API        http://localhost:8000/docs
+#   Dashboard  http://localhost:8501
+#   n8n        http://localhost:5678
+#   MLflow     http://localhost:5000   (docker compose --profile mlops up -d)
+# Secrets (GROQ_API_KEY, LANGSMITH_API_KEY, ...) are read from a local .env file.
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://admin:${POSTGRES_PASSWORD:-password123}@postgres:5432/supply_chain
+  REDIS_URL: redis://redis:6379/0
+  LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+  LLM_MODEL: ${LLM_MODEL:-}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-sentence-transformers}
+  RERANKER_BACKEND: ${RERANKER_BACKEND:-flashrank}
+  LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+  LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-supply-chain-ai-copilot}
+  MODEL_PATH: /app/models/demand_model.joblib
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: supply_chain_db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password123}
+      POSTGRES_DB: supply_chain
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d supply_chain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment: *app-env
+    ports:
+      - "8000:8000"
+    volumes:
+      - models:/app/models
+      - hf-cache:/app/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  app:
+    build: .
+    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment: *app-env
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+    volumes:
+      - models:/app/models
+      - hf-cache:/app/.cache
+    depends_on:
+      api:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n:/workflows:ro
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    profiles: ["mlops"]
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlruns
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+
+volumes:
+  pgdata:
+  models:
+  hf-cache:
+  n8n-data:
