@@ -9,7 +9,7 @@ from src.guardrails.validators import GuardrailCategory, check_input, redact
     "query",
     [
         "Forecast chemicals volume for the next 14 days",
-        "What is the carbon footprint of shipping 500 kg 300 km by truck?",
+        "Does the haulier have goods-in-transit insurance for damage claims?",
         "Quote 2 x 40ft to Pasir Gudang",
         "What is demurrage?",
         "How much RM for haulage to Ipoh?",

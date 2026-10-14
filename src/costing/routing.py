@@ -1,12 +1,13 @@
-"""Route & carrier recommendation: balance price, transit time, CO2e and reliability.
+"""Route & carrier recommendation: balance price, transit time, reliability and cargo safety.
 
 Every (mode, carrier) combination that serves the destination becomes an option:
 
 * **price**: the rate-card quote, with the carrier's price factor applied to the
   haulage lines (fuel, truck, driver, linehaul) before margin;
 * **transit days**: door-to-door, by mode, plus the carrier's speed adjustment;
-* **CO2e**: the quote's emissions scaled by the carrier's fleet factor;
-* **reliability**: the carrier's *historical* on-time rate from the delivery log.
+* **reliability**: the carrier's *historical* on-time rate from the delivery log;
+* **safety**: the carrier's *historical* damage rate (share of jobs with a cargo
+  damage claim) from the same delivery log.
 
 Each criterion is min-max normalised across the options (0 = best) and combined with
 the user's priority weights. Options that no other option beats on every criterion
@@ -24,7 +25,7 @@ from src.costing.quote import Mode, QuoteRequest, build_quote
 from src.costing.rates import RateCard, get_rate_card
 
 HAULAGE_CATEGORIES = {"fuel", "truck", "driver", "linehaul"}
-CRITERIA = ("cost", "speed", "co2", "reliability")
+CRITERIA = ("cost", "speed", "reliability", "safety")
 
 
 class Priorities(BaseModel):
@@ -32,11 +33,11 @@ class Priorities(BaseModel):
 
     cost: float = Field(default=0.4, ge=0)
     speed: float = Field(default=0.2, ge=0)
-    co2: float = Field(default=0.2, ge=0)
-    reliability: float = Field(default=0.2, ge=0)
+    reliability: float = Field(default=0.25, ge=0)
+    safety: float = Field(default=0.15, ge=0, description="Low cargo damage / claims risk")
 
     def normalised(self) -> dict[str, float]:
-        total = self.cost + self.speed + self.co2 + self.reliability
+        total = sum(getattr(self, c) for c in CRITERIA)
         if total <= 0:
             return dict.fromkeys(CRITERIA, 0.25)
         return {c: getattr(self, c) / total for c in CRITERIA}
@@ -49,9 +50,9 @@ class RouteOption(BaseModel):
     fleet: str
     price_rm: float
     cost_rm: float
-    co2e_kg: float
     transit_days: int
     on_time_rate: float
+    damage_rate: float = Field(description="Share of historical jobs with cargo damage")
     criterion_scores: dict[str, float] = Field(
         description="0 = best option on that criterion, 1 = worst"
     )
@@ -97,7 +98,33 @@ def _days(n: int) -> str:
 
 def _pct(new: float, old: float) -> str:
     change = (new - old) / old * 100 if old else 0.0
+    if round(change) == 0:
+        return "same price"
     return f"{abs(change):.0f}% {'cheaper' if change < 0 else 'more expensive'}"
+
+
+def _versus(best: RouteOption, ref: RouteOption, which: str) -> str:
+    """Plain-terms trade-off of ``best`` against an alternative, e.g. 1 day slower, 18% cheaper."""
+    day_diff = best.transit_days - ref.transit_days
+    timing = (
+        f"{_days(day_diff)} slower"
+        if day_diff > 0
+        else f"{_days(-day_diff)} faster"
+        if day_diff < 0
+        else "same transit time"
+    )
+    parts = [
+        timing,
+        _pct(best.price_rm, ref.price_rm),
+        f"on time {best.on_time_rate:.0%} vs {ref.on_time_rate:.0%}",
+    ]
+    if round(best.damage_rate, 3) != round(ref.damage_rate, 3):
+        parts.append(f"damage rate {best.damage_rate:.1%} vs {ref.damage_rate:.1%}")
+    return (
+        f" Versus the {which} option ({ref.carrier_label}, {ref.mode.value}): "
+        + ", ".join(parts)
+        + "."
+    )
 
 
 def recommend(
@@ -105,6 +132,7 @@ def recommend(
     priorities: Priorities | None = None,
     rates: RateCard | None = None,
     on_time: dict[str, float] | None = None,
+    damage: dict[str, float] | None = None,
 ) -> RouteRecommendation:
     rates = rates or get_rate_card()
     priorities = priorities or Priorities()
@@ -112,6 +140,10 @@ def recommend(
         from src.hauliers.scorecard import on_time_rates  # noqa: PLC0415
 
         on_time = on_time_rates()
+    if damage is None:
+        from src.hauliers.scorecard import damage_rates  # noqa: PLC0415
+
+        damage = damage_rates()
     from src.costing.road_routing import with_road_route  # noqa: PLC0415
 
     req, _ = with_road_route(req, rates)
@@ -136,11 +168,11 @@ def recommend(
                     "fleet": carrier.get("fleet", ""),
                     "cost_rm": round(cost, 2),
                     "price_rm": round(cost * (1 + base.margin_pct / 100), 2),
-                    "co2e_kg": round(base.co2e_kg * carrier["co2_factor"], 1),
                     "transit_days": transit_days(
                         rates, dest_key, mode, carrier, req.road_drive_hours
                     ),
                     "on_time_rate": round(on_time.get(key, 0.9), 4),
+                    "damage_rate": round(damage.get(key, 0.01), 4),
                 }
             )
     if not raw:
@@ -149,8 +181,8 @@ def recommend(
     values = {
         "cost": [o["price_rm"] for o in raw],
         "speed": [o["transit_days"] for o in raw],
-        "co2": [o["co2e_kg"] for o in raw],
         "reliability": [1 - o["on_time_rate"] for o in raw],
+        "safety": [o["damage_rate"] for o in raw],
     }
     weights = priorities.normalised()
     options: list[RouteOption] = []
@@ -180,37 +212,25 @@ def recommend(
     best = options[0]
     explanation = (
         f"Recommended: {best.carrier_label} by {best.mode.value} — {_days(best.transit_days)}, "
-        f"RM{best.price_rm:,.0f}, {best.co2e_kg:,.0f} kg CO2e, {best.on_time_rate:.0%} on time."
+        f"RM{best.price_rm:,.0f}, {best.on_time_rate:.0%} on time, "
+        f"{best.damage_rate:.1%} damage rate."
     )
-    # Explain the trade-off against the most relevant alternative.
-    fastest = min(options, key=lambda o: (o.transit_days, o.price_rm))
-    cheapest = min(options, key=lambda o: o.price_rm)
-    greenest = min(options, key=lambda o: o.co2e_kg)
-    if fastest.transit_days < best.transit_days:
-        ref, which = fastest, "fastest"
-    elif cheapest.price_rm < best.price_rm:
-        ref, which = cheapest, "cheapest"
-    elif greenest.co2e_kg < best.co2e_kg:
-        ref, which = greenest, "lowest-CO2"
-    else:
-        ref, which = None, ""
-    if ref is not None:
-        day_diff = best.transit_days - ref.transit_days
-        timing = (
-            f"{_days(day_diff)} slower"
-            if day_diff > 0
-            else f"{_days(-day_diff)} faster"
-            if day_diff < 0
-            else "same transit time"
-        )
-        co2_change = (best.co2e_kg - ref.co2e_kg) / ref.co2e_kg * 100 if ref.co2e_kg else 0
-        explanation += (
-            f" Versus the {which} option ({ref.carrier_label}, {ref.mode.value}): {timing}, "
-            f"{_pct(best.price_rm, ref.price_rm)}, "
-            f"{abs(co2_change):.0f}% {'less' if co2_change < 0 else 'more'} CO2e, "
-            f"and {(best.on_time_rate - ref.on_time_rate) * 100:+.0f} pts on-time rate."
-        )
-    elif len(options) > 1:
+    # Explain the trade-off against the alternatives that beat it on one criterion.
+    alternatives = [
+        ("cheapest", min(options, key=lambda o: (o.price_rm, o.transit_days)), "price_rm", -1),
+        ("fastest", min(options, key=lambda o: (o.transit_days, o.price_rm)), "transit_days", -1),
+        ("most reliable", max(options, key=lambda o: (o.on_time_rate, -o.price_rm)),
+         "on_time_rate", 1),
+        ("safest", min(options, key=lambda o: (o.damage_rate, o.price_rm)), "damage_rate", -1),
+    ]  # fmt: skip
+    shown: list[RouteOption] = []
+    for which, ref, attr, better in alternatives:
+        if ref is best or ref in shown or len(shown) == 2:
+            continue
+        if (getattr(ref, attr) - getattr(best, attr)) * better > 0:
+            explanation += _versus(best, ref, which)
+            shown.append(ref)
+    if not shown and len(options) > 1:
         explanation += " It is the best option on every criterion."
     return RouteRecommendation(
         destination=dest_key,

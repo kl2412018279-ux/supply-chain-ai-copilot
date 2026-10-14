@@ -3,9 +3,13 @@ import pytest
 
 from src.hauliers.data import generate_deliveries
 from src.hauliers.scorecard import (
+    COMPLIANCE_CRITERIA,
+    POLICY_DOCS,
+    WEIGHTS,
     DeliveryLog,
     build_scorecard,
-    esg_evidence,
+    compliance_evidence,
+    damage_rates,
     monthly_on_time,
     on_time_rates,
 )
@@ -41,28 +45,58 @@ def test_ranking_separates_good_and_poor_hauliers(log):
     assert [s.rank for s in scores] == list(range(1, len(scores) + 1))
     assert scores == sorted(scores, key=lambda s: s.score, reverse=True)
     by_key = _by_key(scores)
-    assert by_key["hijau"].grade == "A"
+    assert {scores[0].haulier, scores[1].haulier} == {"muara-fleet", "hijau"}
+    assert by_key["muara-fleet"].grade == "A" and by_key["hijau"].grade in {"A", "B"}
     assert by_key["cempaka"].grade == "D"
     assert "punctuality" in by_key["cempaka"].summary or "damage" in by_key["cempaka"].summary
 
 
-def test_esg_evidence_cites_sentences():
-    hijau = {e.criterion: e for e in esg_evidence("hijau")}
+def _met(haulier):
+    return {e.criterion for e in compliance_evidence(haulier) if e.met}
+
+
+def test_compliance_evidence_cites_sentences():
+    hijau = {e.criterion: e for e in compliance_evidence("hijau")}
+    assert set(hijau) == set(COMPLIANCE_CRITERIA)
     assert all(e.met for e in hijau.values())
-    assert "40 percent by 2030" in hijau["emissions_target"].evidence
-    assert hijau["certification"].source == "haulier_esg_hijau.md"
-    assert not any(e.met for e in esg_evidence("cempaka"))
+    assert "RM 500,000" in hijau["cargo_insurance"].evidence
+    assert "maximum of 10 hours" in hijau["driver_hours"].evidence
+    assert hijau["certification"].source == "haulier_policy_hijau.md"
 
 
-def test_plan_to_set_target_is_not_a_target():
-    borneo = {e.criterion: e for e in esg_evidence("borneo-express")}
-    assert not borneo["emissions_target"].met  # "plan to publish a reduction target in 2027"
-    assert not borneo["clean_fleet"].met  # low-sulphur fuel is compliance, not a cleaner fleet
+def test_hauliers_meet_different_compliance_subsets():
+    assert _met("cempaka") == {"tracking"}  # weakest: GPS units only
+    assert _met("raillink") == {"dg_training", "fleet_maintenance", "tracking", "certification"}
+    assert _met("nusantara") == {"dg_training", "driver_hours", "tracking", "cargo_insurance"}
+    assert _met("borneo-express") == {"dg_training", "cargo_insurance"}
 
 
-def test_measurement_detected_in_either_word_order():
-    nusantara = {e.criterion: e for e in esg_evidence("nusantara")}
-    assert nusantara["measurement"].met  # "...CO2 emissions per voyage are recorded and reported"
+def test_muara_evidence_comes_from_operations_manual():
+    muara = {e.criterion: e for e in compliance_evidence("muara-fleet")}
+    assert all(e.met for e in muara.values())
+    assert {e.source for e in muara.values()} == {"operations_manual.pdf"}
+    assert "goods-in-transit insurance" in muara["cargo_insurance"].evidence
+    assert "ISO 9001" in muara["certification"].evidence
+
+
+def test_near_misses_are_not_evidence():
+    # "arrange their own cargo cover" is not insurance; monthly inspection is not a Euro 5/6
+    # fleet with preventive maintenance; a planned certification audit is not a certificate.
+    assert "cargo_insurance" not in _met("cempaka")
+    assert "fleet_maintenance" not in _met("cempaka")
+    assert "certification" not in _met("borneo-express")
+
+
+def test_policy_documents_exist_and_weights_sum_to_one():
+    assert all(path.exists() for path in POLICY_DOCS.values())
+    assert WEIGHTS == {"on_time": 0.45, "quality": 0.25, "compliance": 0.20, "price": 0.10}
+    assert sum(WEIGHTS.values()) == pytest.approx(1.0)
+
+
+def test_scorecard_exposes_compliance_fields(log):
+    s = _by_key(build_scorecard(log))["raillink"]
+    assert s.compliance_score == pytest.approx(4 / 6, abs=1e-3)
+    assert set(s.component_scores) == {"on_time", "quality", "compliance", "price"}
 
 
 def test_monthly_trend_and_on_time_rates(log):
@@ -71,6 +105,9 @@ def test_monthly_trend_and_on_time_rates(log):
     assert trend["on_time_rate"].between(0, 1).all()
     rates = on_time_rates()
     assert set(rates) >= {"hijau", "cempaka", "raillink"}
+    damage = damage_rates()
+    assert set(damage) == set(rates)
+    assert damage["cempaka"] > damage["hijau"]
 
 
 def test_llm_summary_uses_prompt_template(log):

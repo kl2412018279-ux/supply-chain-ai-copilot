@@ -34,7 +34,6 @@ from src.delays.model import (
 from src.delays.model import ModelNotTrainedError as DelayModelNotTrainedError
 from src.extraction.extract import ExtractionResult, ShippingDocument, extract
 from src.extraction.store import get_document_store
-from src.forecasting.esg_calculator import EmissionResult, TransportMode, calculate_emissions
 from src.forecasting.predict import (
     MAX_HORIZON_DAYS,
     DemandForecaster,
@@ -90,7 +89,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Freight Ops Copilot API",
     version="0.2.0",
-    description="Port Klang 3PL copilot: RM job quotes with CO2e, container-volume forecasts, "
+    description="Port Klang 3PL copilot: RM job quotes with margin and transit days, "
+    "carrier planning, container-volume forecasts, "
     "operations-manual search and an AI agent.",
     lifespan=lifespan,
 )
@@ -120,12 +120,6 @@ class ForecastResponse(BaseModel):
     total_teu: float
     forecast: list[ForecastPoint]
     model_metrics: dict[str, float]
-
-
-class EmissionRequest(BaseModel):
-    distance_km: float = Field(gt=0, le=50_000)
-    weight_kg: float = Field(gt=0, le=10_000_000)
-    mode: TransportMode = TransportMode.truck
 
 
 class SearchRequest(BaseModel):
@@ -208,7 +202,7 @@ def list_commodities(forecaster: DemandForecaster = Depends(forecaster_dep)) -> 
 
 @app.post("/quote", response_model=Quote)
 def quote(req: QuoteRequest) -> Quote:
-    """Itemised RM quote (fuel, truck, driver, tolls, port, customs, surcharges, margin) + CO2e."""
+    """Itemised RM quote (fuel, truck, driver, tolls, port, customs, surcharges, margin)."""
     try:
         return build_quote(with_road_route(req)[0])
     except KeyError as exc:
@@ -219,7 +213,7 @@ def quote(req: QuoteRequest) -> Quote:
 
 @app.post("/quote/compare", response_model=QuoteComparison)
 def quote_compare(req: QuoteRequest) -> QuoteComparison:
-    """Every transport mode offered to the destination, with the RM per tonne CO2e trade-off."""
+    """Every mode offered to the destination, with transit days and RM per day saved."""
     try:
         return compare_modes(with_road_route(req)[0])
     except KeyError as exc:
@@ -235,7 +229,7 @@ class RouteRequest(BaseModel):
 
 @app.post("/routing/recommend", response_model=RouteRecommendation)
 def route_recommend(req: RouteRequest) -> RouteRecommendation:
-    """Rank every mode x carrier option by price, transit days, CO2e and on-time history."""
+    """Rank every mode x carrier option by price, transit days, on-time and damage history."""
     try:
         return recommend(req.job, req.priorities)
     except KeyError as exc:
@@ -339,11 +333,6 @@ def destinations() -> dict[str, dict[str, Any]]:
 def rates() -> dict[str, Any]:
     """The full rate card (example rates; edit data/reference/rates.json)."""
     return get_rate_card().data
-
-
-@app.post("/emissions", response_model=EmissionResult)
-def emissions(req: EmissionRequest) -> EmissionResult:
-    return calculate_emissions(req.distance_km, req.weight_kg, req.mode.value)
 
 
 @app.get("/volumes/summary", response_model=VolumeSummary)

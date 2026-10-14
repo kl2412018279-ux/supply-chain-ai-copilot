@@ -1,4 +1,4 @@
-Muara Logistics Sdn Bhd - Operations, Compliance and Sustainability Manual (2026 edition)
+Muara Logistics Sdn Bhd - Operations and Compliance Manual (2026 edition)
 
 FICTIONAL SAMPLE DOCUMENT. Muara Logistics is a fictional company created for the Freight Ops Copilot portfolio project. Rules below are simplified examples written for the demo; always verify regulatory requirements with the Royal Malaysian Customs Department (JKDM), the relevant ministries and the port operators before acting on them.
 
@@ -60,7 +60,7 @@ Section 6. Haulage Operations
 
 6.2 Drivers must complete a pre-trip inspection covering tyres, brakes, lights, twist locks and the container seal number before leaving the port.
 
-6.3 Rail (KTMB intermodal) is offered for Ipoh and Prai (Penang). For distances above 200 km, planners must quote both truck and rail options so the customer can compare cost and emissions.
+6.3 Rail (KTMB intermodal) is offered for Ipoh and Prai (Penang). For distances above 200 km, planners must quote both truck and rail options so the customer can compare cost and transit time.
 
 6.4 Shipments to Sabah and Sarawak travel by coastal shipping from Port Klang. Delivery inside East Malaysia is subcontracted to partner hauliers and quoted separately.
 
@@ -88,12 +88,18 @@ Section 9. Quotations and Pricing
 
 9.3 Quotes are valid for 7 days because diesel prices change weekly.
 
-Section 10. Sustainability and ESG
+Section 10. Subcontractor and Fleet Compliance
 
-10.1 Muara Logistics commits to reduce fleet emissions per TEU moved by 30 percent by 2030 against a 2024 baseline, through rail modal shift, route optimisation and newer Euro 5 prime movers.
+10.1 Our own fleet is made up of Euro 5 prime movers. Every prime mover and trailer follows a preventive maintenance schedule every 10,000 km, and a truck that misses its service is taken off the roster.
 
-10.2 Emissions are calculated from actual diesel consumption using 2.68 kg of CO2 per litre of diesel. Every quotation shows the estimated CO2e next to the price.
+10.2 Drivers work a maximum of 11 hours per day, with a 30-minute rest break after every 4 hours of driving. Planners must not roster a driver for a night run after a full day shift.
 
-10.3 Idling is limited to 5 minutes. Drivers must switch off engines while waiting in port queues.
+10.3 All DG drivers complete dangerous goods training at least every two years in addition to holding the GDL DG endorsement.
 
-10.4 Subcontracted hauliers must report fuel use quarterly and comply with the company code of conduct, including fair working hours and no forced labour.
+10.4 Every prime mover carries a GPS unit. The control room monitors real-time tracking of all loaded containers and alerts the customer when a delivery is expected to be more than 2 hours late.
+
+10.5 Muara Logistics holds goods-in-transit insurance of RM 300,000 per container. Cargo damage must be photographed and reported to the Claims Officer within 24 hours, and claims are filed with the insurer within 7 days.
+
+10.6 Our operations are certified to ISO 9001 quality management.
+
+10.7 Subcontracted hauliers must hold valid goods-in-transit insurance, provide GPS tracking, follow the same driver working hours and pass an annual compliance audit before receiving jobs.

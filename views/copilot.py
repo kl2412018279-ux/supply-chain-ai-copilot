@@ -21,8 +21,8 @@ head, action = st.columns([5, 1], vertical_alignment="bottom")
 with head:
     page_header(
         "Copilot",
-        "Ask about quotes, haulage, container volumes, customs or ESG. Figures come from tools "
-        "(rate card, forecast model, operations manual), never from the model's memory.",
+        "Ask about quotes, carriers, container volumes, customs or compliance. Figures come from "
+        "tools (rate card, forecast model, operations manual), never from the model's memory.",
     )
 with action:
     if history and st.button("Clear chat", icon=":material/delete:", width="stretch"):
