@@ -1,4 +1,4 @@
-"""Haulier scorecard: delivery performance + ESG evidence."""
+"""Haulier scorecard: delivery performance + compliance evidence."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from views.common import BLUE, page_header, rm, show, style
 page_header(
     "Hauliers",
     "Subcontractor scorecard. Punctuality, damage and claims come from SQL over the delivery "
-    "log; ESG evidence is quoted from each haulier's own policy document.",
+    "log; compliance evidence is quoted from each haulier's own policy document.",
 )
 
 scores = build_scorecard()
@@ -29,7 +29,7 @@ table = pd.DataFrame(
             "Score": s.score,
             "On time": s.on_time_rate,
             "Damage": s.damage_rate,
-            "ESG": s.esg_score,
+            "Compliance": s.compliance_score,
             "Deliveries": s.deliveries,
             "Claims": s.claims_rm,
         }
@@ -44,8 +44,8 @@ st.dataframe(
         "Score": st.column_config.ProgressColumn(min_value=0, max_value=1, format="%.2f"),
         "On time": st.column_config.NumberColumn(format="percent"),
         "Damage": st.column_config.NumberColumn(format="percent"),
-        "ESG": st.column_config.ProgressColumn(
-            "ESG evidence", min_value=0, max_value=1, format="percent"
+        "Compliance": st.column_config.ProgressColumn(
+            "Compliance evidence", min_value=0, max_value=1, format="percent"
         ),
         "Claims": st.column_config.NumberColumn(format="RM %,.0f"),
     },
@@ -67,7 +67,7 @@ k2.metric(
 )
 k3.metric("Damage rate", f"{s.damage_rate:.1%}")
 k4.metric("Claims", rm(s.claims_rm, 0))
-k5.metric("ESG evidence", f"{sum(e.met for e in s.esg)}/{len(s.esg)}")
+k5.metric("Compliance", f"{sum(e.met for e in s.compliance)}/{len(s.compliance)}")
 st.caption(
     f"{s.fleet} · {', '.join(s.modes)} · {s.deliveries:,} deliveries, {s.containers:,} containers"
 )
@@ -110,8 +110,8 @@ with left:
                 )
 
 with right:
-    st.markdown("**ESG evidence**")
-    for e in s.esg:
+    st.markdown("**Compliance evidence**")
+    for e in s.compliance:
         with st.container(border=True):
             icon = ":material/check_circle:" if e.met else ":material/radio_button_unchecked:"
             st.markdown(f"{icon} **{e.label}**")

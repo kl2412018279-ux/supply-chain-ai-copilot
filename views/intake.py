@@ -131,7 +131,7 @@ with right:
         st.metric(
             f"{q.containers} × {q.container_size}ft {q.cargo_type} → {q.destination_label}",
             rm(q.price_rm, 0),
-            help=f"From {q.origin_label}; cost {rm(q.cost_rm)}, CO2e {q.co2e_kg:,.0f} kg.",
+            help=f"From {q.origin_label}; cost {rm(q.cost_rm)}, margin {rm(q.margin_rm)}.",
         )
         for w in q.warnings:
             st.caption(w)
