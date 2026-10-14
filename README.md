@@ -1,8 +1,11 @@
 # 📦 Supply Chain & ESG AI Copilot
 
+[![Live demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://supply-chain-ai-copilot-rul.streamlit.app/)
 [![CI](https://github.com/kl2412018279-ux/supply-chain-ai-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/kl2412018279-ux/supply-chain-ai-copilot/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Cost](https://img.shields.io/badge/running%20cost-%240-brightgreen)
+
+**🚀 [Live demo](https://supply-chain-ai-copilot-rul.streamlit.app/)**: try the copilot in your browser. The free host sleeps when idle, so the first load can take about 30 seconds.
 
 An AI copilot for supply chain and sustainability teams. It combines:
 
