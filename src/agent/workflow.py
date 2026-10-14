@@ -188,6 +188,32 @@ _HISTORY_RE = re.compile(r"\b(history|historical|past|last year|handled|summary|
 _EMISSION_RE = re.compile(r"\b(emission|emissions|carbon|co2|co2e|footprint)\b", re.I)
 _GREETING_RE = re.compile(r"^\s*(hi|hello|hey|help|what can you do)\b", re.I)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_SCORECARD_RE = re.compile(
+    r"\b(hauliers?|subcontractors?|scorecards?|suppliers?|vendors?|carrier performance"
+    r"|rank (?:our |the )?(?:carriers|hauliers)|esg (?:score|rating|performance))\b",
+    re.I,
+)
+_RECOMMEND_RE = re.compile(
+    r"\b(recommend\w*|best (?:carrier|option|route|way)|which (?:carrier|haulier|mode)"
+    r"|optimal|trade-?offs?|carriers?)\b",
+    re.I,
+)
+_DELAY_RE = re.compile(r"\b(delay(?:s|ed)?|late|eta|arrive on time|risk)\b", re.I)
+_DATE_RE = re.compile(r"\b(20\d\d-\d\d-\d\d)\b")
+_MONTHS = {
+    m: i
+    for i, m in enumerate(
+        ["january", "february", "march", "april", "may", "june", "july", "august",
+         "september", "october", "november", "december"],
+        start=1,
+    )
+}  # fmt: skip
+_PRIORITY_WORDS = {
+    "cost": r"\b(cheap\w*|cost|budget|price)\b",
+    "speed": r"\b(fast\w*|urgent|asap|quick\w*|speed)\b",
+    "co2": r"\b(green\w*|carbon|co2|emission\w*|sustainab\w*|esg)\b",
+    "reliability": r"\b(reliab\w*|on[- ]time|punctual\w*)\b",
+}
 
 
 def _num(raw: str) -> float:
@@ -222,6 +248,45 @@ def _parse_horizon(text: str, default: int) -> int:
     return min(int(m.group(1)) * factor, 90)
 
 
+def _parse_carrier(text: str) -> str | None:
+    from src.costing.rates import get_rate_card  # noqa: PLC0415
+
+    words = set(re.findall(r"[a-z]+", text.lower()))
+    for key, carrier in get_rate_card().data["carriers"].items():
+        if key.startswith("_"):
+            continue
+        label_words = set(re.findall(r"[a-z]+", carrier["label"].lower())) - {
+            "transport", "haulage", "shipping", "line", "own", "fleet", "coastal", "intermodal",
+            "express",
+        }  # fmt: skip
+        if words & label_words:
+            return key
+    return None
+
+
+def _parse_eta(text: str) -> str | None:
+    import datetime as dt  # noqa: PLC0415
+
+    if m := _DATE_RE.search(text):
+        return m.group(1)
+    today = dt.date.today()
+    lowered = text.lower()
+    if "next week" in lowered:
+        return (today + dt.timedelta(days=7)).isoformat()
+    for name, month in _MONTHS.items():
+        if re.search(rf"\b{name}\b", lowered):
+            year = today.year if month >= today.month else today.year + 1
+            return dt.date(year, month, 15).isoformat()
+    return None
+
+
+def _parse_priorities(text: str) -> dict[str, float]:
+    hits = {k: bool(re.search(p, text, re.I)) for k, p in _PRIORITY_WORDS.items()}
+    if not any(hits.values()):
+        return {}
+    return {f"priority_{k}": (1.0 if hit else 0.15) for k, hit in hits.items()}
+
+
 def _rm(x: float) -> str:
     return f"RM{x:,.2f}"
 
@@ -242,7 +307,42 @@ class RuleBasedAgent:
         commodities = _parse_commodities(query)
         destination = get_rate_card().find_destination(query)
 
-        if destination and (_QUOTE_RE.search(query) or _COMPARE_RE.search(query)):
+        carrier = _parse_carrier(query)
+        asks_about_carrier = bool(
+            carrier
+            and re.search(r"\b(scor\w*|rat\w*|grade|esg|perform\w*|reliab\w*)\b", query, re.I)
+        )
+        if (_SCORECARD_RE.search(query) or asks_about_carrier) and not (
+            destination and _RECOMMEND_RE.search(query)
+        ):
+            out = recorder.run("get_haulier_scorecard", haulier=carrier)
+            parts.append(self._format_scorecard(out))
+        elif destination and _RECOMMEND_RE.search(query):
+            args = self._quote_args(query, destination, commodities)
+            out = recorder.run("recommend_route_and_carrier", **args, **_parse_priorities(query))
+            parts.append(self._format_recommendation(out))
+        elif destination and _DELAY_RE.search(query):
+            args: dict[str, Any] = {"destination": destination}
+            if carrier:
+                args["carrier"] = carrier
+            else:  # default carrier for the destination's main mode
+                mode = get_rate_card().destinations[destination]["modes"][0]
+                args["carrier"] = {"truck": "muara-fleet", "rail": "raillink", "sea": "nusantara"}[
+                    mode
+                ]
+            if commodities:
+                args["commodity"] = commodities[0]
+            if eta := _parse_eta(query):
+                args["eta"] = eta
+            if re.search(r"\binspect", query, re.I):
+                args["customs_inspection"] = True
+            if "northport" in query.lower():
+                args["port"] = "northport"
+            if m := _COUNT_RE.search(query):
+                args["containers"] = int(m.group(1) or m.group(2))
+            out = recorder.run("predict_delay_risk", **args)
+            parts.append(self._format_delay(out))
+        elif destination and (_QUOTE_RE.search(query) or _COMPARE_RE.search(query)):
             args = self._quote_args(query, destination, commodities)
             mode = _parse_mode(query)
             if _COMPARE_RE.search(query) or (mode is None and destination_has_options(destination)):
@@ -324,6 +424,9 @@ class RuleBasedAgent:
             "- *Compare truck vs rail for a 40ft chemicals container to Penang*\n"
             "- *Forecast chemicals volume for the next 2 weeks*\n"
             "- *Projected haulage spend for palm oil next month*\n"
+            "- *Which carrier is best for chemicals to Penang? Cheapest please*\n"
+            "- *Will a shipment to Kuching in December be delayed?*\n"
+            "- *Show the haulier scorecard*\n"
             "- *What documents do I need to clear a chemical import?*"
         )
 
@@ -371,6 +474,61 @@ class RuleBasedAgent:
             lines.append(f"{out['lowest_co2_mode']} is both the cheapest and the greenest option.")
         for q in out["quotes"]:
             lines += [f"⚠️ {w}" for w in q["warnings"]]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_recommendation(out: dict[str, Any]) -> str:
+        if "error" in out:
+            return f"Could not recommend a route: {out['error']}"
+        lines = [f"**{out['explanation']}**", "", "Options ranked for your priorities:"]
+        for o in out["options"]:
+            flag = "" if o["pareto_optimal"] else " (dominated)"
+            lines.append(
+                f"{o['rank']}. {o['carrier_label']} ({o['mode']}): {_rm(o['price_rm'])}, "
+                f"{o['transit_days']} d, {o['co2e_kg']:,.0f} kg CO2e, "
+                f"{o['on_time_rate']:.0%} on time · fit {o['fit']:.0f}/100{flag}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_delay(out: dict[str, Any]) -> str:
+        if "error" in out:
+            return f"Could not assess delay risk: {out['error']}"
+        p = out["probabilities"]
+        f = out["features"]
+        lines = [
+            f"**Delay risk: {out['risk']}** (Low {p['Low']:.0%} · Medium {p['Medium']:.0%} · "
+            f"High {p['High']:.0%}): {out['carrier_label']} by {f['mode']} to "
+            f"{out['destination_label']} ({f['distance_km']} km).",
+            f"Expected delay ≈ {out['expected_delay_hours']:.0f} h · demurrage exposure ≈ "
+            f"{_rm(out['demurrage_exposure_rm'])}.",
+        ]
+        if out["drivers"]:
+            lines.append(
+                "Main drivers: "
+                + "; ".join(f"{d['factor'].lower()} ({d['detail']})" for d in out["drivers"])
+                + "."
+            )
+        return "\n\n".join(lines)
+
+    @staticmethod
+    def _format_scorecard(out: dict[str, Any] | list[dict[str, Any]]) -> str:
+        if isinstance(out, dict) and "error" in out:
+            return f"Could not load the scorecard: {out['error']}"
+        if isinstance(out, dict):
+            met = [e["label"] for e in out["esg"] if e["met"]]
+            return (
+                f"**{out['summary']}**\n\n"
+                f"On time {out['on_time_rate']:.1%} over {out['deliveries']:,} deliveries · "
+                f"damage {out['damage_rate']:.1%} · claims {_rm(out['claims_rm'])}.\n\n"
+                f"ESG evidence ({len(met)}/{len(out['esg'])}): "
+                + (", ".join(met) or "none found")
+                + "."
+            )
+        lines = ["**Haulier scorecard** (on-time 40%, quality 20%, ESG 30%, price 10%):"]
+        lines += [
+            f"{s['rank']}. {s['label']}: grade **{s['grade']}** ({s['score']:.2f})" for s in out
+        ]
         return "\n".join(lines)
 
     @staticmethod

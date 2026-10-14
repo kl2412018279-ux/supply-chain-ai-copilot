@@ -304,5 +304,84 @@
       "lon": 116.0735
     },
     "_source": "Approximate road km / class-3 tolls one way from Westport; sea km approximate. Examples only."
+  },
+  "transit": {
+    "_source": "Assumptions: door-to-door transit including port/terminal dwell",
+    "truck_shift_km_per_day": 450,
+    "rail_terminal_dwell_days": 1,
+    "rail_km_per_day": 400,
+    "sea_port_days": 2,
+    "sea_km_per_day": 650
+  },
+  "carriers": {
+    "_note": "FICTIONAL carriers/hauliers. price_factor scales haulage cost lines, co2_factor scales emissions (fleet age/engine standard), transit_days_delta adjusts transit.",
+    "muara-fleet": {
+      "label": "Muara own fleet",
+      "modes": [
+        "truck"
+      ],
+      "price_factor": 1.0,
+      "co2_factor": 1.0,
+      "transit_days_delta": 0,
+      "fleet": "Euro 5 prime movers"
+    },
+    "cempaka": {
+      "label": "Cempaka Haulage",
+      "modes": [
+        "truck"
+      ],
+      "price_factor": 0.88,
+      "co2_factor": 1.18,
+      "transit_days_delta": 0,
+      "fleet": "Older Euro 3 fleet"
+    },
+    "hijau": {
+      "label": "Hijau Transport",
+      "modes": [
+        "truck"
+      ],
+      "price_factor": 1.1,
+      "co2_factor": 0.8,
+      "transit_days_delta": 0,
+      "fleet": "Euro 6 + LNG prime movers"
+    },
+    "raillink": {
+      "label": "RailLink Intermodal",
+      "modes": [
+        "rail"
+      ],
+      "price_factor": 1.0,
+      "co2_factor": 1.0,
+      "transit_days_delta": 0,
+      "fleet": "Rail + partner first/last mile"
+    },
+    "nusantara": {
+      "label": "Nusantara Coastal Line",
+      "modes": [
+        "sea"
+      ],
+      "price_factor": 1.0,
+      "co2_factor": 1.0,
+      "transit_days_delta": 0,
+      "fleet": "Feeder vessels"
+    },
+    "borneo-express": {
+      "label": "Borneo Express Shipping",
+      "modes": [
+        "sea"
+      ],
+      "price_factor": 1.15,
+      "co2_factor": 1.05,
+      "transit_days_delta": -1,
+      "fleet": "Faster feeder service"
+    }
+  },
+  "demurrage": {
+    "_source": "Assumption: shipping-line demurrage after free time; confirm per delivery order",
+    "free_days": 3,
+    "rm_per_day": {
+      "20": 120.0,
+      "40": 240.0
+    }
   }
 }

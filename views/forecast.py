@@ -134,7 +134,7 @@ if commodity == "all":
             }
         )
     st.dataframe(
-        pd.DataFrame(rows), hide_index=True, use_container_width=True,
+        pd.DataFrame(rows), hide_index=True, width="stretch",
         column_config={
             "Change": st.column_config.NumberColumn(format="percent"),
             "Share": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1),
@@ -143,7 +143,7 @@ if commodity == "all":
 
 with st.expander("Daily forecast table"):
     table = fc.pivot_table(index="date", columns="commodity", values="forecast").round(1)
-    st.dataframe(table, use_container_width=True)
+    st.dataframe(table, width="stretch")
     st.download_button(
         "Download (CSV)", table.to_csv().encode(), file_name=f"teu_forecast_{horizon}d.csv",
         mime="text/csv", icon=":material/download:",

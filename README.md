@@ -14,8 +14,10 @@ An AI copilot for a **Malaysian third-party logistics (3PL) provider at Port Kla
 | Quote builder | Volume forecast |
 |---|---|
 | ![Quote page: itemised RM cost breakdown](docs/images/quote.png) | ![Forecast page: weekly TEU actual vs forecast](docs/images/forecast.png) |
-| **Truck vs rail (dark mode)** | **Operations manual search** |
-| ![Mode comparison in dark mode](docs/images/modes-dark.png) | ![Hybrid document search with highlighted matches](docs/images/documents.png) |
+| **Route & carrier planner** | **Delay-risk prediction** |
+| ![Route planner: options ranked by price, transit, CO2e and reliability](docs/images/planner.png) | ![Delay risk: probabilities and risk drivers](docs/images/delay-risk.png) |
+| **Document intake (B/L extraction)** | **Haulier scorecard (dark mode)** |
+| ![Document intake: extracted fields and validation](docs/images/intake.png) | ![Haulier scorecard with ESG evidence](docs/images/hauliers-dark.png) |
 
 ## What it does
 
@@ -25,6 +27,10 @@ An AI copilot for a **Malaysian third-party logistics (3PL) provider at Port Kla
 | *"Compare truck vs rail for chemicals to Penang"* | Prices every transport mode side by side and reports the **RM cost per tonne of CO2e avoided**. |
 | *"How many palm oil containers next month?"* | **LightGBM TEU forecast** per commodity, with Chinese New Year and Hari Raya dips and the Sep–Nov palm-oil harvest peak. |
 | *"What's our projected haulage spend for chemicals?"* | Forecast TEU × rate card → **projected cost, revenue, diesel and CO2e in RM**. |
+| *"Which carrier is best for chemicals to Penang? Cheapest please"* | **Route & carrier planner**: ranks every mode × carrier on price, transit days, CO2e and *historical* on-time rate with your priority weights, flags Pareto-dominated options and explains the trade-off (*"1 day slower, 42% cheaper, 71% less CO2e"*). |
+| *"Will a chemicals shipment to Kuching in December be delayed?"* | **Delay-risk classifier** (Low / Medium / High) with probabilities, the drivers behind the prediction (monsoon, congestion, customs inspection, carrier…) and expected **demurrage exposure in RM**. |
+| *(upload a Bill of Lading PDF)* | **Document intake**: extracts B/L and invoice fields into a Pydantic record, validates ISO 6346 container check digits, HS codes and the 25 t weight limit, turns the document into a haulage quote, saves it to the database after review. |
+| *"Show the haulier scorecard"* / *"How does Cempaka score on ESG?"* | **Haulier scorecard**: on-time, damage and claims from SQL over the delivery log, plus ESG criteria evidenced by quoting each haulier's own policy document; composite grade A–D. |
 | *"What documents do I need to clear a chemical import?"* | **Hybrid RAG** over the operations manual (customs forms, dangerous goods, palm oil, demurrage, warehousing), with page citations. |
 | *"Ignore previous instructions…"* | 🛡️ Blocked by input guardrails before any tokens are spent. |
 
@@ -54,8 +60,17 @@ flowchart LR
     AG -->|tool| FC[forecast_container_volume<br/>estimate_haulage_spend]
     AG -->|tool| V[get_volume_summary<br/>parameterised SQL]
     AG -->|tool| D[search_operations_documents]
+    AG -->|tool| R[recommend_route_and_carrier]
+    AG -->|tool| DR[predict_delay_risk]
+    AG -->|tool| HS[get_haulier_scorecard]
 
-    Q --> RC[(rates.json<br/>RM rate card)]
+    Q --> RC[(rates.json<br/>RM rate card + carriers)]
+    R --> RC
+    R --> HS
+    DR --> RF[Random-forest delay model]
+    HS --> DL[(Delivery log<br/>SQL)]
+    API -->|POST /documents/extract| X[B/L & invoice extraction<br/>LLM or rules + validation]
+    X --> PG
     FC --> LGB[LightGBM TEU model]
     D --> HR[Hybrid retriever<br/>pgvector + full-text → RRF → FlashRank]
     HR --> PG[(PostgreSQL + pgvector<br/>volumes + embeddings)]
@@ -107,7 +122,7 @@ Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 
 | 3 | **AI safety & guardrails** | Pydantic schemas for every tool argument and response, injection and off-topic filters, output redaction, no text-to-SQL. `src/guardrails/` |
 | 4 | **Semantic caching** | Redis-backed (in-memory fallback), with TTL, entity fingerprinting, invalidation on document changes, and no caching of fallback answers. `src/cache/` |
 | 5 | **Resilience** | If the LLM provider fails (retired model, outage, rate limit), the rule-based agent answers with the same tools. Every external dependency (Postgres, Redis, LLM, embedding model) is optional. |
-| 6 | **Testing & CI/CD** | 120+ pytest tests: cost engine, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, a headless Streamlit test, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
+| 6 | **Testing & CI/CD** | 175 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
 
 ---
 
@@ -122,14 +137,24 @@ Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 
 
 That is **27% lower MAE** than the baseline. R² is moderate because daily counts of around 10 TEU are inherently noisy.
 
-**Retrieval** (`python -m src.rag.evaluate`: 20 labelled questions over the operations manual):
+**Delay-risk classifier** (5,142 synthetic shipments; time-based split, tested on the latest 20%; `python -m src.delays.model`):
+
+| Model | Accuracy | Macro F1 | High-risk recall |
+|---|---|---|---|
+| Always the majority class | 0.647 | 0.262 | 0.000 |
+| Majority class per transport mode | 0.768 | 0.461 | 0.000 |
+| **Random forest** (congestion, monsoon, holiday, inspection, carrier…) | **0.883** | **0.777** | **0.625** |
+
+Both baselines miss every high-risk shipment, which is the class that costs money. The model catches about 5 in 8 of them.
+
+**Retrieval** (`python -m src.rag.evaluate`: 20 labelled questions over the operations manual, searched across the whole library, including the haulier policies):
 
 | Method | hit@1 | hit@3 | MRR@3 |
 |---|---|---|---|
 | Dense only | 0.60 | 0.85 | 0.72 |
-| Keyword only (BM25) | 0.75 | 1.00 | 0.87 |
-| Hybrid (RRF) | 0.75 | 0.95 | 0.84 |
-| **Hybrid + rerank** | **0.75** | **1.00** | **0.87** |
+| Keyword only (BM25) | 0.70 | 0.95 | 0.82 |
+| Hybrid (RRF) | 0.70 | 0.85 | 0.78 |
+| **Hybrid + rerank** | **0.70** | **1.00** | **0.84** |
 
 These numbers use the offline backends (hashing embedder, lexical reranker), which is what CI runs. Measure the real bge-small + FlashRank stack with `EMBEDDING_BACKEND=sentence-transformers RERANKER_BACKEND=flashrank make eval`.
 
@@ -187,6 +212,12 @@ Override the model with `LLM_MODEL`. Providers retire models over time (Groq shu
 | `POST` | `/chat` | Copilot answer + tool calls + sources (guardrails and cache applied) |
 | `POST` | `/quote` | Itemised RM quote + CO2e for a container job |
 | `POST` | `/quote/compare` | Every transport mode for a destination, with RM per tonne CO2e avoided |
+| `POST` | `/routing/recommend` | `{job, priorities}` → every mode × carrier option ranked, with explanation |
+| `POST` | `/delays/predict` | Delay risk, drivers and demurrage exposure for one shipment |
+| `GET` | `/delays/upcoming` | Upcoming arrivals scored and sorted by risk |
+| `GET` | `/hauliers/scorecard`, `/hauliers/{id}/trend` | Ranked scorecard with ESG evidence; monthly on-time trend |
+| `POST` | `/documents/extract` | Bill of Lading / invoice PDF → validated fields + suggested quote |
+| `POST` / `GET` | `/documents/records` | Save a reviewed extraction / list saved documents |
 | `GET` | `/destinations`, `/rates` | Destinations served and the full rate card |
 | `POST` | `/forecast` | `{commodity, horizon_days}` → daily TEU forecast |
 | `GET` | `/commodities` | Commodities known to the model |
@@ -210,7 +241,10 @@ curl -s localhost:8000/quote -H 'content-type: application/json' \
 
 - **`data/raw/container_volumes.csv`**: synthetic daily TEU per commodity (chemicals, palm oil, plastics, general), January 2024 to September 2026. It includes weekday patterns, holiday dips, the palm-oil harvest peak, year-end peaks and growth. Regenerate it with `python -m src.forecasting.data`. Real exports work too: any CSV with a date, a commodity/series column and a TEU/volume column.
 - **`data/raw/operations_manual.pdf`**: a **fictional** 10-section operations manual covering customs (K1/K2/K8, uCustoms), dangerous goods, palm oil (heating, MSPO, EUDR), plastics, haulage, demurrage/detention, warehousing, pricing and ESG. It is generated from `scripts/sample_docs/operations_manual.md`. Its rules are simplified examples, so verify real requirements with JKDM and the port operators.
-- **`data/reference/rates.json`**: the rate card described above.
+- **`data/raw/shipment_history.csv`**: 5,142 synthetic shipments with delay outcomes. Delays are driven by congestion, monsoon, holiday weeks, customs inspection, dangerous goods, weekend arrival, distance and carrier reliability. Regenerate it with `python -m src.delays.model --regenerate`.
+- **`data/raw/haulier_deliveries.csv`** and **`data/raw/haulier_esg_*.md`**: synthetic delivery logs and **fictional** policy documents for six fictional carriers. The policies range from strong to weak, so the scorecard has something real to separate.
+- **`data/samples/*.pdf`**: fictional Bills of Lading and a commercial invoice (`scripts/make_sample_shipping_docs.py`). `bl_chemicals_errors.pdf` deliberately contains a bad container check digit and an overweight container.
+- **`data/reference/rates.json`**: the rate card described above, plus the fictional carriers, transit assumptions and demurrage rates.
 
 ## Development
 
@@ -238,13 +272,16 @@ docker compose up -d postgres redis && make test-all   # + pgvector/Redis integr
 ```
 supply-chain-ai-copilot/
 ├── app.py                       # Streamlit entry: sidebar + top navigation
-├── views/                       # pages: copilot, quote, forecast, documents (+ shared chart style)
+├── views/                       # pages: copilot, quote, planner, forecast, delays, intake, hauliers, documents
 ├── .streamlit/config.toml       # light/dark theme
 ├── data/
 │   ├── raw/                     # container_volumes.csv, operations_manual.pdf
 │   └── reference/rates.json     # RM rate card (example values + sources)
 ├── src/
-│   ├── costing/                 # rate card loader, quote engine, mode comparison
+│   ├── costing/                 # rate card loader, quote engine, mode comparison, route & carrier planner
+│   ├── delays/                  # shipment history generator, delay-risk classifier + explanations
+│   ├── extraction/              # B/L & invoice extraction, ISO 6346 validation, document store
+│   ├── hauliers/                # delivery logs, SQL scorecard, ESG evidence
 │   ├── forecasting/             # TEU data/features, train (MLflow), predict, volume repo, CO2 calc
 │   ├── rag/                     # ingestion, embeddings, pgvector store, reranker, retriever, eval
 │   ├── agent/                   # tools, LangGraph workflow + rule-based agent, copilot pipeline
@@ -254,16 +291,16 @@ supply-chain-ai-copilot/
 │   ├── config.py, observability.py
 ├── notebooks/                   # 01 volume exploration, 02 training + RM projection
 ├── docker/, docker-compose.yml, Dockerfile, n8n/, scripts/
-└── tests/                       # pytest suite (120+ tests)
+└── tests/                       # pytest suite (175 tests)
 ```
 
 ## Roadmap
 
-**Phase 2 (planned):**
-- **Demurrage & detention alerts**: flag containers close to free-time expiry, with the RM penalty at risk.
+**Next ideas:**
+- **Free-time countdown**: combine extracted B/Ls with the delay model to alert on containers about to incur demurrage.
 - **Fleet maintenance tracker**: cost per km per prime mover, plus service-due alerts.
 - **Warehouse occupancy forecast** for the general and DG stores.
-- **n8n rate-request automation**: a forwarder's rate-request e-mail produces a draft quote automatically.
+- **n8n automation**: a forwarder's rate-request e-mail produces a draft quote; a scanned B/L in Google Drive triggers extraction (scanned images need OCR or a vision model first).
 
 **Known limitations:**
 - Rates are examples; distances and tolls are approximate.

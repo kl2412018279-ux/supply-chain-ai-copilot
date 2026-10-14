@@ -11,7 +11,7 @@ APP = str(ROOT / "app.py")
 
 
 @pytest.fixture
-def app(trained_model, ingested_store):
+def app(trained_model, ingested_store, delay_model):
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_file(APP, default_timeout=60).run()
@@ -52,3 +52,21 @@ def test_forecast_and_documents_pages(app):
     assert not app.exception
     app.text_input[0].set_value("K8 transshipment").run()
     assert any("K8" in m.value for m in app.markdown)
+
+
+def test_new_pages_render(app):
+    app.switch_page("views/planner.py").run()
+    assert not app.exception
+    assert any("Recommended:" in a.value for a in app.success)
+
+    app.switch_page("views/delays.py").run()
+    assert not app.exception
+    assert any(m.label == "Delay risk" for m in app.metric)
+
+    app.switch_page("views/intake.py").run()
+    assert not app.exception
+    assert any("check digit" in e.value for e in app.error)  # default sample has a bad container
+
+    app.switch_page("views/hauliers.py").run()
+    assert not app.exception
+    assert any(m.label == "Grade" for m in app.metric)

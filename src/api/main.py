@@ -23,6 +23,16 @@ from src.agent.copilot import SupplyChainCopilot, get_copilot
 from src.config import get_settings
 from src.costing.quote import Quote, QuoteComparison, QuoteRequest, build_quote, compare_modes
 from src.costing.rates import get_rate_card
+from src.costing.routing import Priorities, RouteRecommendation, recommend
+from src.delays.model import (
+    DelayInput,
+    DelayPrediction,
+    get_delay_model,
+    upcoming_shipments,
+)
+from src.delays.model import ModelNotTrainedError as DelayModelNotTrainedError
+from src.extraction.extract import ExtractionResult, ShippingDocument, extract
+from src.extraction.store import get_document_store
 from src.forecasting.esg_calculator import EmissionResult, TransportMode, calculate_emissions
 from src.forecasting.predict import (
     MAX_HORIZON_DAYS,
@@ -32,6 +42,7 @@ from src.forecasting.predict import (
 )
 from src.forecasting.volume_repository import VolumeSummary, get_volume_repository
 from src.guardrails.schemas import CopilotResponse, Source
+from src.hauliers.scorecard import HaulierScore, build_scorecard, monthly_on_time
 from src.observability import metrics
 from src.rag.ingest_pdf import SUPPORTED_SUFFIXES, ingest_bytes, ingest_directory
 from src.rag.retriever import HybridRetriever, get_retriever
@@ -54,6 +65,11 @@ def bootstrap() -> None:
 
         logger.info("No model found - training on %s", settings.volumes_csv_path)
         train(load_volumes(settings.volumes_csv_path), settings.model_path)
+    if settings.auto_train and not settings.delay_model_path.exists():
+        from src.delays.model import train as train_delay_model  # noqa: PLC0415
+
+        logger.info("No delay model found - training on the shipment history")
+        train_delay_model()
     if settings.auto_ingest and get_vector_store().count() == 0 and settings.documents_dir.exists():
         logger.info("Vector store empty - ingesting %s", settings.documents_dir)
         ingest_directory(settings.documents_dir)
@@ -207,6 +223,108 @@ def quote_compare(req: QuoteRequest) -> QuoteComparison:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class RouteRequest(BaseModel):
+    job: QuoteRequest
+    priorities: Priorities = Priorities()
+
+
+@app.post("/routing/recommend", response_model=RouteRecommendation)
+def route_recommend(req: RouteRequest) -> RouteRecommendation:
+    """Rank every mode x carrier option by price, transit days, CO2e and on-time history."""
+    try:
+        return recommend(req.job, req.priorities)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def delay_model_dep():
+    try:
+        return get_delay_model()
+    except DelayModelNotTrainedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/delays/predict", response_model=DelayPrediction)
+def delay_predict(req: DelayInput, model=Depends(delay_model_dep)) -> DelayPrediction:
+    """Low / Medium / High delay risk with drivers and demurrage exposure."""
+    try:
+        return model.predict(req)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/delays/upcoming")
+def delays_upcoming(
+    days: int = Query(default=14, ge=1, le=60), model=Depends(delay_model_dep)
+) -> list[dict[str, Any]]:
+    """Synthetic manifest of upcoming arrivals, scored and sorted by risk."""
+    scored = model.score_frame(upcoming_shipments(days=days))
+    return scored.sort_values("risk_score", ascending=False).to_dict(orient="records")
+
+
+@app.get("/hauliers/scorecard", response_model=list[HaulierScore])
+def haulier_scorecard() -> list[HaulierScore]:
+    return build_scorecard()
+
+
+@app.get("/hauliers/{haulier}/trend")
+def haulier_trend(haulier: str) -> list[dict[str, Any]]:
+    trend = monthly_on_time(haulier)
+    if trend.empty:
+        raise HTTPException(status_code=404, detail=f"No deliveries for '{haulier}'.")
+    return trend.to_dict(orient="records")
+
+
+@app.post("/documents/extract", response_model=ExtractionResult)
+async def documents_extract(file: UploadFile = File(...)) -> ExtractionResult:
+    """Extract and validate fields from a Bill of Lading or commercial invoice PDF."""
+    filename = file.filename or "document.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="Upload a PDF.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB).")
+    from src.agent.workflow import build_llm  # noqa: PLC0415
+
+    try:
+        return await run_in_threadpool(
+            extract, data, Path(filename).name, build_llm(get_settings())
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Extraction failed for %s", filename)
+        raise HTTPException(status_code=422, detail=f"Could not read {filename}.") from exc
+
+
+class SaveDocumentRequest(BaseModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    document: ShippingDocument
+
+
+@app.post("/documents/records")
+def documents_save(req: SaveDocumentRequest) -> dict[str, Any]:
+    """Save a (reviewed) extraction to the database; re-saving replaces it."""
+    from src.extraction.extract import validate  # noqa: PLC0415
+
+    issues, _ = validate(req.document)
+    try:
+        return get_document_store().save(
+            req.document, req.file_name, [i.model_dump() for i in issues]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/documents/records")
+def documents_records(limit: int = Query(default=50, ge=1, le=500)) -> list[dict[str, Any]]:
+    return get_document_store().list(limit)
 
 
 @app.get("/destinations")
