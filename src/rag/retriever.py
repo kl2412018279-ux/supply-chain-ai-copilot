@@ -1,7 +1,7 @@
 """Hybrid retrieval: dense + keyword search fused with Reciprocal Rank Fusion, then reranked.
 
 Dense vectors capture meaning ("carbon reduction goals"), keyword search catches
-exact tokens that embeddings blur (SKU codes, clause numbers like "4.2").
+exact tokens that embeddings blur (form codes like "K8", UN numbers, clause numbers like "4.2").
 """
 
 from __future__ import annotations

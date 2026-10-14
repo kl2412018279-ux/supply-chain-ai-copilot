@@ -36,21 +36,49 @@ def test_emissions_validation(client, payload):
 
 
 def test_forecast_endpoint(client):
-    r = client.post("/forecast", json={"sku": "SKU-101", "horizon_days": 7})
+    r = client.post("/forecast", json={"commodity": "palm oil", "horizon_days": 7})
     assert r.status_code == 200
     body = r.json()
-    assert body["sku"] == "SKU-101" and len(body["forecast"]) == 7
-    assert body["total_units"] == pytest.approx(sum(p["forecast"] for p in body["forecast"]), 0.5)
+    assert body["commodity"] == "palm-oil" and len(body["forecast"]) == 7
+    assert body["total_teu"] == pytest.approx(sum(p["forecast"] for p in body["forecast"]), 0.5)
     assert "mae" in body["model_metrics"]
 
 
 def test_forecast_errors(client):
-    assert client.post("/forecast", json={"sku": "SKU-999"}).status_code == 404
-    assert client.post("/forecast", json={"sku": "SKU-101", "horizon_days": 500}).status_code == 422
+    assert client.post("/forecast", json={"commodity": "bananas"}).status_code == 404
+    body = {"commodity": "chemicals", "horizon_days": 500}
+    assert client.post("/forecast", json=body).status_code == 422
 
 
-def test_skus(client):
-    assert client.get("/skus").json() == ["SKU-101", "SKU-102", "SKU-103"]
+def test_commodities(client):
+    assert client.get("/commodities").json() == ["chemicals", "palm-oil", "plastics"]
+
+
+def test_quote_endpoint(client):
+    body = {"destination": "Penang", "container_size": "40", "cargo_type": "chemicals"}
+    r = client.post("/quote", json=body)
+    assert r.status_code == 200
+    q = r.json()
+    assert q["destination"] == "penang-prai" and q["mode"] == "truck"
+    assert q["price_rm"] > q["cost_rm"] > 0 and q["co2e_kg"] > 0
+    assert {i["category"] for i in q["line_items"]} >= {"fuel", "tolls", "port", "customs", "cargo"}
+
+
+def test_quote_compare_endpoint(client):
+    r = client.post("/quote/compare", json={"destination": "Ipoh"})
+    assert [q["mode"] for q in r.json()["quotes"]] == ["truck", "rail"]
+
+
+def test_quote_errors(client):
+    assert client.post("/quote", json={"destination": "Bangkok"}).status_code == 404
+    body = {"destination": "Shah Alam", "mode": "rail"}
+    assert client.post("/quote", json=body).status_code == 422
+    assert client.post("/quote", json={"destination": "KL", "containers": 0}).status_code == 422
+
+
+def test_rates_and_destinations(client):
+    assert "penang-prai" in client.get("/destinations").json()
+    assert client.get("/rates").json()["currency"] == "MYR"
 
 
 def test_chat_answers_and_caches(client):
@@ -67,10 +95,10 @@ def test_chat_blocks_injection(client):
 
 
 def test_document_search(client):
-    r = client.post("/documents/search", json={"query": "renewable electricity suppliers", "k": 2})
+    r = client.post("/documents/search", json={"query": "demurrage free time", "k": 2})
     assert r.status_code == 200
     hits = r.json()
-    assert len(hits) == 2 and hits[0]["source"] == "esg_policy.pdf"
+    assert len(hits) == 2 and hits[0]["source"] == "operations_manual.pdf"
 
 
 def test_document_upload_list_and_delete(client):
@@ -98,11 +126,13 @@ def test_document_upload_rejects_bad_files(client):
     )
 
 
-def test_sales_summary(client):
-    r = client.get("/sales/summary", params={"sku": "SKU-101", "start_date": "2024-01-01"})
+def test_volume_summary(client):
+    params = {"commodity": "Palm Oil", "start_date": "2026-01-01"}
+    r = client.get("/volumes/summary", params=params)
     assert r.status_code == 200
-    assert r.json()["by_sku"][0]["sku"] == "SKU-101"
-    assert client.get("/sales/summary", params={"sku": "NOPE"}).status_code == 404
+    assert r.json()["by_commodity"][0]["commodity"] == "palm-oil"
+    assert r.json()["start"] == "2026-01-01"
+    assert client.get("/volumes/summary", params={"commodity": "NOPE"}).status_code == 404
 
 
 def test_metrics(client):

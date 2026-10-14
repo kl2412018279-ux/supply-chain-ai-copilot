@@ -75,12 +75,17 @@ class Settings:
     # Paths
     model_path: Path = field(
         default_factory=lambda: Path(
-            _env("MODEL_PATH", str(PROJECT_ROOT / "models" / "demand_model.joblib"))
+            _env("MODEL_PATH", str(PROJECT_ROOT / "models" / "volume_model.joblib"))
         )
     )
-    sales_csv_path: Path = field(
+    volumes_csv_path: Path = field(
         default_factory=lambda: Path(
-            _env("SALES_CSV_PATH", str(PROJECT_ROOT / "data" / "raw" / "sample_sales.csv"))
+            _env("VOLUMES_CSV_PATH", str(PROJECT_ROOT / "data" / "raw" / "container_volumes.csv"))
+        )
+    )
+    rates_path: Path = field(
+        default_factory=lambda: Path(
+            _env("RATES_PATH", str(PROJECT_ROOT / "data" / "reference" / "rates.json"))
         )
     )
     documents_dir: Path = field(
