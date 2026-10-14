@@ -25,7 +25,7 @@ def test_routes_quote_with_parsed_parameters(agent):
     assert args["destination"] == "pasir-gudang" and args["container_size"] == "40"
     assert args["containers"] == 2 and args["cargo_type"] == "palm-oil"
     assert args["origin"] == "northport" and args["cargo_weight_kg"] == 20000
-    assert "Price: RM" in out.answer and "CO2e" in out.answer
+    assert "Price: RM" in out.answer and "Margin ≈ RM" in out.answer
 
 
 def test_quote_includes_warehousing(agent):
@@ -67,12 +67,22 @@ def test_volume_history(agent):
     assert "plastics" in out.answer and "TEU" in out.answer
 
 
-def test_routes_generic_emission_question(agent):
-    out = agent.run("Carbon footprint of shipping 2 tonnes 400 km by rail?")
-    assert _tool_names(out) == ["calculate_shipping_emissions"]
-    args = out.tool_calls[0].arguments
-    assert args["weight_kg"] == 2000 and args["distance_km"] == 400 and args["mode"] == "rail"
-    assert "22.40 kg CO2e" in out.answer
+def test_compare_modes_shows_transit_days_and_premium(agent):
+    out = agent.run("Compare truck vs rail for a 40ft chemicals container to Penang")
+    assert _tool_names(out) == ["compare_transport_modes"]
+    cmp = out.tool_calls[0].output
+    assert cmp["cheapest_mode"] == "rail" and cmp["fastest_mode"] == "truck"
+    assert cmp["transit_days"] == {"truck": 1, "rail": 2}
+    assert "fastest: **truck**" in out.answer and "per transit day saved" in out.answer
+
+
+def test_emissions_tool_is_gone():
+    from src.agent.tools import TOOLS_BY_NAME
+
+    assert "calculate_shipping_emissions" not in TOOLS_BY_NAME
+    assert (
+        "priority_safety" in TOOLS_BY_NAME["recommend_route_and_carrier"].args_schema.model_fields
+    )
 
 
 def test_procedure_question_searches_manual_and_cites_sources(agent):
@@ -91,6 +101,14 @@ def test_routes_carrier_recommendation_with_priorities(agent):
     assert "Recommended: RailLink Intermodal" in out.answer
 
 
+def test_safety_words_raise_the_safety_priority(agent):
+    out = agent.run("Which carrier is best for chemicals to Shah Alam? Fewest damage claims please")
+    args = out.tool_calls[0].arguments
+    assert args["priority_safety"] == 1.0 and args["priority_cost"] == 0.15
+    assert out.tool_calls[0].output["recommended"]["carrier"] != "cempaka"
+    assert "damage rate" in out.answer
+
+
 def test_routes_delay_question(agent):
     out = agent.run("Will a chemicals shipment to Kuching in December be delayed?")
     assert _tool_names(out) == ["predict_delay_risk"]
@@ -103,9 +121,9 @@ def test_routes_scorecard_questions(agent):
     ranking = agent.run("Show the haulier scorecard")
     assert _tool_names(ranking) == ["get_haulier_scorecard"]
     assert "1. Hijau Transport" in ranking.answer
-    one = agent.run("How does Cempaka score on ESG?")
+    one = agent.run("How does Cempaka score on compliance?")
     assert one.tool_calls[0].arguments["haulier"] == "cempaka"
-    assert "grade D" in one.answer
+    assert "grade D" in one.answer and "Compliance evidence (1/6)" in one.answer
 
 
 def test_tool_errors_are_returned_not_raised(trained_model):
@@ -172,11 +190,11 @@ def test_copilot_falls_back_when_llm_agent_fails(agent, embedder):
 
     cache = SemanticCache(embedder, InMemoryCacheBackend(), threshold=0.95)
     copilot = SupplyChainCopilot(BrokenAgent(), cache, fallback=agent)
-    response = copilot.ask("Carbon footprint of 500 kg shipped 300 km by truck")
-    assert "15.75 kg CO2e" in response.answer
+    response = copilot.ask("Quote a 20ft container to Shah Alam")
+    assert "Price: RM" in response.answer
     assert response.agent == "rule-based (fallback: langgraph failed)"
     # fallback answers are not cached, so the LLM is retried next time
-    assert not copilot.ask("Carbon footprint of 500 kg shipped 300 km by truck").cached
+    assert not copilot.ask("Quote a 20ft container to Shah Alam").cached
 
 
 def test_copilot_redacts_agent_output():
@@ -226,19 +244,20 @@ def test_langgraph_agent_executes_tool_calls(trained_model):
                 content="",
                 tool_calls=[
                     {
-                        "name": "calculate_shipping_emissions",
-                        "args": {"distance_km": 300, "weight_kg": 500, "mode": "truck"},
+                        "name": "quote_container_job",
+                        "args": {"destination": "Shah Alam", "container_size": "20"},
                         "id": "call_1",
                     }
                 ],
             ),
-            AIMessage(content="Shipping emits 15.75 kg CO2e."),
+            AIMessage(content="A 20ft to Shah Alam is quoted from the rate card."),
         ]
     )
-    out = LangGraphAgent(llm).run("Emissions for 500kg over 300km by truck?")
+    out = LangGraphAgent(llm).run("Quote a 20ft container to Shah Alam")
 
     assert out.agent == "langgraph"
-    assert out.answer == "Shipping emits 15.75 kg CO2e."
-    assert out.tool_calls[0].output["co2e_kg"] == 15.75
+    assert out.answer == "A 20ft to Shah Alam is quoted from the rate card."
+    price = out.tool_calls[0].output["price_rm"]
+    assert price > 0 and out.tool_calls[0].output["destination"] == "shah-alam"
     # second LLM turn received the tool result
-    assert '"co2e_kg": 15.75' in llm.seen[1][-1].content
+    assert f'"price_rm": {price}' in llm.seen[1][-1].content

@@ -67,7 +67,7 @@ def _entity_vocabulary() -> dict[str, str]:
     for i, month in enumerate(months, start=1):
         vocab[month] = f"month:{i}"
     for word in ("truck", "rail", "sea", "air", "westport", "northport", "inspection",
-                 "cheapest", "fastest", "greenest", "reliable"):  # fmt: skip
+                 "cheapest", "fastest", "safest", "reliable"):  # fmt: skip
         vocab[word] = word
     for generic in ("oil", "port", "the", "goods"):  # too ambiguous on their own
         vocab.pop(generic, None)

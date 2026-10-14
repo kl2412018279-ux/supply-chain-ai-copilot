@@ -1,16 +1,17 @@
-"""Haulier scorecard: delivery performance (SQL) + ESG evidence (documents) -> grade.
+"""Haulier scorecard: delivery performance (SQL) + compliance evidence (documents) -> grade.
 
 Performance comes from analytical SQL over the delivery log, run on PostgreSQL when
 ``DATABASE_URL`` is set and on an in-memory SQLite copy of the CSV otherwise (the
-same SQL works on both). ESG evidence is extracted from each haulier's policy
-document: every criterion that is met cites the exact sentence and file.
+same SQL works on both). Compliance evidence (DG training, driver hours, fleet
+maintenance, tracking, cargo insurance, ISO certification) is extracted from each
+haulier's policy document: every criterion that is met cites the exact sentence and file.
 
 Composite score (0-1)::
 
-    0.40 x on-time   (70% -> 0, 100% -> 1)
-  + 0.20 x quality   (damage rate 3% -> 0, 0% -> 1)
-  + 0.30 x ESG       (criteria met / criteria checked)
-  + 0.10 x price     (rate-card price factor 1.20 -> 0, 0.85 -> 1)
+    0.45 x on-time     (70% -> 0, 100% -> 1)
+  + 0.25 x quality     (damage rate 3% -> 0, 0% -> 1)
+  + 0.20 x compliance  (criteria met / criteria checked)
+  + 0.10 x price       (rate-card price factor 1.20 -> 0, 0.85 -> 1)
 """
 
 from __future__ import annotations
@@ -31,41 +32,45 @@ from src.costing.rates import get_rate_card
 logger = logging.getLogger(__name__)
 
 DELIVERIES_CSV = PROJECT_ROOT / "data" / "raw" / "haulier_deliveries.csv"
-ESG_DOCS: dict[str, Path] = {
+POLICY_DOCS: dict[str, Path] = {
     "muara-fleet": PROJECT_ROOT / "data" / "raw" / "operations_manual.pdf",
     **{
-        key: PROJECT_ROOT / "data" / "raw" / f"haulier_esg_{key}.md"
+        key: PROJECT_ROOT / "data" / "raw" / f"haulier_policy_{key}.md"
         for key in ("hijau", "cempaka", "raillink", "nusantara", "borneo-express")
     },
 }
-WEIGHTS = {"on_time": 0.40, "quality": 0.20, "esg": 0.30, "price": 0.10}
+WEIGHTS = {"on_time": 0.45, "quality": 0.25, "compliance": 0.20, "price": 0.10}
 
 # criterion -> (label, regex that counts as evidence)
-ESG_CRITERIA: dict[str, tuple[str, str]] = {
-    "emissions_target": (
-        "Time-bound emissions reduction target",
-        # A plan to *publish* a target is not a target: require %, a year and a reduction verb.
-        r"^(?=.*\b(emission|co2|carbon))(?=.*\d+\s*(percent|%))(?=.*\b20[2-5]\d)(?=.*\b(reduc|cut))",
-    ),
-    "measurement": (
-        "Measures and reports fuel / CO2",
-        r"(measur|report|record|disclos|calculat)\w*.{0,80}(fuel|co2|emission)"
-        r"|(fuel|co2|emission)\w*.{0,80}\b(measur|report|record|disclos)",
-    ),
-    "clean_fleet": (
-        "Cleaner fleet (Euro 5/6, LNG, electric)",
-        r"\beuro ?(5|6|v|vi)\b|\blng\b|electric prime",  # low-sulphur fuel is only compliance
-    ),
-    "labour": (
-        "Working hours & forced-labour safeguards",
-        r"forced labou?r|working hours|rest (hours|periods)|maritime labour",
-    ),
+COMPLIANCE_CRITERIA: dict[str, tuple[str, str]] = {
     "dg_training": (
-        "Dangerous-goods training",
-        r"(dangerous goods|\bdg) (training|endorsement)"
-        r"|(training|certification).{0,40}dangerous goods",
+        "Dangerous-goods training / licensing",
+        r"(dangerous goods|\bdg) (training|endorsement|licen[cs]e)"
+        r"|(training|certification|endorsement).{0,40}dangerous goods",
     ),
-    "certification": ("Certified environmental management (ISO 14001)", r"iso ?14001"),
+    "driver_hours": (
+        "Driver working hours & fatigue management",
+        # A promise to "look into" fatigue is not a rule: require a limit or a rest rule.
+        r"(maximum|limit\w*|no more than|not exceed)\w*.{0,40}\b(hours|driving)"
+        r"|rest (hours|periods|breaks?)|fatigue management",
+    ),
+    "fleet_maintenance": (
+        "Modern fleet (Euro 5/6) & preventive maintenance",
+        r"\beuro ?(5|6|v|vi)\b|preventive maintenance|planned maintenance",
+    ),
+    "tracking": (
+        "GPS / real-time tracking",
+        r"\bgps\b|real[- ]time (tracking|visibility|position)|\bais\b",
+    ),
+    "cargo_insurance": (
+        "Goods-in-transit / cargo liability insurance",
+        r"goods[- ]in[- ]transit (insurance|cover)|cargo (liability|insurance)"
+        r"|liability insurance",
+    ),
+    "certification": (
+        "Certified management system (ISO 9001 / 45001 / 39001)",
+        r"iso ?(9001|45001|39001)",
+    ),
 }
 
 PERFORMANCE_SQL = """
@@ -108,7 +113,7 @@ CREATE TABLE IF NOT EXISTS haulier_deliveries (
 """
 
 
-class EsgEvidence(BaseModel):
+class ComplianceEvidence(BaseModel):
     criterion: str
     label: str
     met: bool
@@ -127,8 +132,8 @@ class HaulierScore(BaseModel):
     avg_late_hours: float
     damage_rate: float
     claims_rm: float
-    esg_score: float
-    esg: list[EsgEvidence]
+    compliance_score: float
+    compliance: list[ComplianceEvidence]
     price_factor: float
     component_scores: dict[str, float]
     score: float
@@ -189,7 +194,7 @@ def get_delivery_log() -> DeliveryLog:
     return DeliveryLog()
 
 
-# ---------------------------------------------------------------------- ESG evidence
+# --------------------------------------------------------------- compliance evidence
 
 
 def _document_text(path: Path) -> str:
@@ -200,16 +205,16 @@ def _document_text(path: Path) -> str:
 
 
 @lru_cache
-def esg_evidence(haulier: str) -> tuple[EsgEvidence, ...]:
-    path = ESG_DOCS.get(haulier)
+def compliance_evidence(haulier: str) -> tuple[ComplianceEvidence, ...]:
+    path = POLICY_DOCS.get(haulier)
     text = _document_text(path) if path and path.exists() else ""
     sentences = re.split(r"(?<=[.!?])\s+", text)
     found = []
-    for key, (label, pattern) in ESG_CRITERIA.items():
+    for key, (label, pattern) in COMPLIANCE_CRITERIA.items():
         regex = re.compile(pattern, re.IGNORECASE)
         hit = next((s.strip() for s in sentences if regex.search(s)), None)
         found.append(
-            EsgEvidence(
+            ComplianceEvidence(
                 criterion=key,
                 label=label,
                 met=hit is not None,
@@ -244,9 +249,9 @@ def _summary(s: HaulierScore) -> str:
         strengths.append(f"low damage rate ({s.damage_rate:.1%})")
     elif s.damage_rate >= 0.015:
         gaps.append(f"damage ({s.damage_rate:.1%} of jobs, RM{s.claims_rm:,.0f} in claims)")
-    missing = [e.label.lower() for e in s.esg if not e.met]
-    if s.esg_score >= 0.8:
-        strengths.append("strong ESG evidence")
+    missing = [e.label.lower() for e in s.compliance if not e.met]
+    if s.compliance_score >= 0.8:
+        strengths.append("strong compliance evidence")
     elif missing:
         gaps.append("no evidence of " + ", ".join(missing[:3]))
     if s.price_factor <= 0.9:
@@ -269,12 +274,12 @@ def build_scorecard(log: DeliveryLog | None = None, since: str | None = None) ->
         if key not in perf.index:
             continue
         row = perf.loc[key]
-        evidence = list(esg_evidence(key))
-        esg = sum(e.met for e in evidence) / len(evidence)
+        evidence = list(compliance_evidence(key))
+        compliance = sum(e.met for e in evidence) / len(evidence)
         components = {
             "on_time": _clip((float(row["on_time_rate"]) - 0.70) / 0.30),
             "quality": _clip(1 - float(row["damage_rate"]) / 0.03),
-            "esg": esg,
+            "compliance": compliance,
             "price": _clip((1.20 - carrier["price_factor"]) / 0.35),
         }
         score = sum(WEIGHTS[k] * v for k, v in components.items())
@@ -290,8 +295,8 @@ def build_scorecard(log: DeliveryLog | None = None, since: str | None = None) ->
                 avg_late_hours=round(float(row["avg_late_hours"] or 0), 1),
                 damage_rate=round(float(row["damage_rate"]), 4),
                 claims_rm=round(float(row["claims_rm"]), 2),
-                esg_score=round(esg, 3),
-                esg=evidence,
+                compliance_score=round(compliance, 3),
+                compliance=evidence,
                 price_factor=carrier["price_factor"],
                 component_scores={k: round(v, 3) for k, v in components.items()},
                 score=round(score, 3),
@@ -313,6 +318,12 @@ def on_time_rates() -> dict[str, float]:
     """Historical on-time rate per carrier (used by the route planner)."""
     perf = get_delivery_log().query(PERFORMANCE_SQL, {"start": None})
     return dict(zip(perf["haulier"], perf["on_time_rate"].astype(float), strict=True))
+
+
+def damage_rates() -> dict[str, float]:
+    """Historical cargo damage rate per carrier (the route planner's safety criterion)."""
+    perf = get_delivery_log().query(PERFORMANCE_SQL, {"start": None})
+    return dict(zip(perf["haulier"], perf["damage_rate"].astype(float), strict=True))
 
 
 SUMMARY_PROMPT = """You are a logistics procurement analyst. Write a 3-sentence assessment of

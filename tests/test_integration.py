@@ -76,7 +76,7 @@ def test_redis_semantic_cache(embedder):
     backend = RedisCacheBackend(REDIS_URL)
     backend.clear()
     cache = SemanticCache(embedder, backend, threshold=0.9, ttl_seconds=60)
-    cache.store("What is our ESG score?", {"answer": "A-"})
-    assert cache.lookup("what is our esg score")[0] == {"answer": "A-"}
+    cache.store("What is our on-time rate?", {"answer": "A-"})
+    assert cache.lookup("what is our on-time rate")[0] == {"answer": "A-"}
     assert cache.lookup("Forecast chemicals volume") is None
     backend.clear()
