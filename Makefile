@@ -1,4 +1,4 @@
-.PHONY: install install-dev data train ingest api app test test-all lint format eval up down
+.PHONY: install install-dev data train delays samples ingest api app test test-all lint format eval up down
 
 install:        ## full install (agent, embeddings, MLflow)
 	pip install -r requirements.txt
@@ -8,6 +8,10 @@ data:           ## regenerate synthetic container-volume CSV
 	python -m src.forecasting.data
 train:          ## train LightGBM with grid search + MLflow tracking
 	python -m src.forecasting.train --tune --mlflow
+delays:         ## train the delay-risk classifier
+	python -m src.delays.model
+samples:        ## regenerate sample Bill of Lading / invoice PDFs
+	python scripts/make_sample_shipping_docs.py
 ingest:         ## embed documents in data/raw into the vector store
 	python -m src.rag.ingest_pdf
 eval:           ## retrieval quality report (hit@k / MRR)
