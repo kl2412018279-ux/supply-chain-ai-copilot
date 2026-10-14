@@ -21,6 +21,8 @@ RUN pip install -r requirements.txt
 
 COPY src ./src
 COPY app.py ./
+COPY views ./views
+COPY .streamlit ./.streamlit
 COPY data ./data
 COPY scripts ./scripts
 
