@@ -63,7 +63,6 @@ with st.sidebar:
         st.html("".join(f'<div class="kv"><span>{k}</span><span>{v}</span></div>' for k, v in info))
         if copilot.agent.name == "rule-based":
             st.caption("Offline mode: set `GROQ_API_KEY` to enable the LLM agent.")
-    st.caption("[Source on GitHub](https://github.com/kl2412018279-ux/supply-chain-ai-copilot)")
 
 page = st.navigation(
     {
