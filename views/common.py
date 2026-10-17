@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -128,3 +130,11 @@ def style(fig: go.Figure, *, height: int = 320, y_title: str = "", x_title: str 
 
 def show(fig: go.Figure) -> None:
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+def page_link(page: str, **kwargs) -> None:
+    """``st.page_link`` that stays quiet when the user's role can't open that page."""
+    from streamlit.errors import StreamlitAPIException  # noqa: PLC0415
+
+    with contextlib.suppress(StreamlitAPIException):
+        st.page_link(page, **kwargs)

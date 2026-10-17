@@ -1,0 +1,18 @@
+{
+  "name": "Muara Logistics",
+  "dataColors": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"],
+  "good": "#1baf7a",
+  "neutral": "#eda100",
+  "bad": "#e34948",
+  "maximum": "#2a78d6",
+  "center": "#eda100",
+  "minimum": "#e34948",
+  "background": "#ffffff",
+  "foreground": "#1b1f24",
+  "tableAccent": "#2a78d6",
+  "textClasses": {
+    "title": {"fontFace": "Segoe UI Semibold", "fontSize": 13, "color": "#1b1f24"},
+    "label": {"fontFace": "Segoe UI", "fontSize": 10, "color": "#5b6370"},
+    "callout": {"fontFace": "Segoe UI Semibold", "fontSize": 26, "color": "#1b1f24"}
+  }
+}

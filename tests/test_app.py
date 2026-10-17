@@ -8,13 +8,16 @@ pytest.importorskip("streamlit")
 pytest.importorskip("plotly")
 
 APP = str(ROOT / "app.py")
+MANAGER = {"username": "manager", "role": "manager", "display_name": "Demo", "demo": True}
 
 
 @pytest.fixture
 def app(trained_model, ingested_store, delay_model):
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.session_state["user"] = MANAGER
+    at.run()
     assert not at.exception
     return at
 
@@ -124,3 +127,33 @@ def test_delay_page_shows_and_overrides_rain(app):
     next(t for t in app.toggle if t.label == "Set rainfall manually").set_value(True).run()
     assert not app.exception
     assert any("entered by user" in c.value for c in app.caption)
+
+
+def test_login_required_and_demo_sign_in(trained_model, ingested_store, delay_model):
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception
+    assert not any(m.label == "Past free time" for m in at.metric)  # nothing before login
+    assert any("muara-demo" in m.value for m in at.markdown)  # demo credentials shown
+
+    at.text_input(key="login_username").set_value("sales")
+    at.text_input(key="login_password").set_value("wrong")
+    at.button[0].click().run()
+    assert any("Wrong username or password" in e.value for e in at.error)
+
+    at.text_input(key="login_username").set_value("sales")
+    at.text_input(key="login_password").set_value("muara-demo")
+    at.button[0].click().run()
+    assert not at.exception
+    assert at.session_state["user"]["role"] == "sales"
+    assert any(m.label == "Past free time" for m in at.metric)  # landed on the control tower
+
+
+def test_role_limits_pages(app):
+    app.session_state["user"] = {**MANAGER, "username": "sales", "role": "sales"}
+    app.switch_page("views/quote.py").run()
+    assert not app.exception
+    # Delay risk is an operations page: not registered for sales, so it can't be opened.
+    with pytest.raises(ValueError, match="(?i)not find|unknown|page"):
+        app.switch_page("views/delays.py").run()
