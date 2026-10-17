@@ -105,9 +105,7 @@ class Settings:
     auto_train: bool = field(default_factory=lambda: _env_bool("AUTO_TRAIN", True))
     auto_ingest: bool = field(default_factory=lambda: _env_bool("AUTO_INGEST", True))
 
-    # Dashboard login (see src/auth/users.py)
-    auth_required: bool = field(default_factory=lambda: _env_bool("AUTH_REQUIRED", True))
-    demo_accounts: bool = field(default_factory=lambda: _env_bool("DEMO_ACCOUNTS", True))
+    # Admin sign-in (see src/auth/users.py); visitors use the public demo roles
     admin_username: str = field(default_factory=lambda: _env("ADMIN_USERNAME", "admin").lower())
     admin_password: str = field(default_factory=lambda: _env("ADMIN_PASSWORD"))
 

@@ -1,14 +1,13 @@
 import pytest
 
 from src.auth.users import (
-    DEMO_PASSWORD,
     InMemoryUserStore,
     LoginError,
     LoginThrottle,
     Role,
-    User,
     authenticate,
     check_password,
+    demo_user,
     hash_password,
     seed_accounts,
 )
@@ -29,37 +28,44 @@ def test_hash_round_trip_and_no_plaintext():
     assert not check_password("x", "not-a-hash")
 
 
-def test_demo_accounts_seeded(store):
-    assert {"manager", "ops", "sales"} <= set(store.usernames())
-    user = authenticate("Sales ", DEMO_PASSWORD, store)  # case and spaces tolerated
-    assert user.role is Role.sales and user.demo
-    assert not user.can_change_shared_data
-    assert user.can_open("quote") and not user.can_open("data_import")
+def test_demo_users_are_read_only():
+    sales = demo_user("sales")
+    assert sales.role is Role.sales and sales.demo
+    assert not sales.can_change_shared_data
+    assert sales.can_open("quote") and not sales.can_open("data_import")
+    assert demo_user().role is Role.manager and demo_user().can_open("evals")
 
 
-def test_wrong_password_and_unknown_user(store):
-    with pytest.raises(LoginError, match="Wrong username or password"):
-        authenticate("manager", "nope", store)
-    with pytest.raises(LoginError, match="Wrong username or password"):
-        authenticate("ghost", DEMO_PASSWORD, store)
-    with pytest.raises(LoginError, match="Enter a username"):
-        authenticate("", "", store)
+def test_no_accounts_without_admin_password(store):
+    assert store.usernames() == []  # visitors don't log in; only an admin account exists
 
 
-def test_admin_from_settings(monkeypatch):
+def test_admin_sign_in(monkeypatch):
     import dataclasses
 
     from src.auth import users
     from src.config import get_settings
 
-    cfg = dataclasses.replace(get_settings(), admin_password="Adm1n-pass", demo_accounts=False)
+    cfg = dataclasses.replace(get_settings(), admin_password="Adm1n-pass")
     monkeypatch.setattr(users, "get_settings", lambda: cfg)
     s = InMemoryUserStore()
-    s.upsert(User("ops", Role.ops, "old demo", True), hash_password(DEMO_PASSWORD))
     seed_accounts(s)
-    assert s.usernames() == ["admin"]  # demo accounts removed when switched off
-    admin = authenticate("admin", "Adm1n-pass", s)
-    assert admin.role is Role.admin and admin.can_change_shared_data and admin.can_open("evals")
+    assert s.usernames() == ["admin"]
+    admin = authenticate(" Admin", "Adm1n-pass", s)
+    assert admin.role is Role.admin and not admin.demo
+    assert admin.can_change_shared_data and admin.can_open("evals")
+    with pytest.raises(LoginError, match="Wrong username or password"):
+        authenticate("admin", "nope", s)
+    with pytest.raises(LoginError, match="Wrong username or password"):
+        authenticate("ghost", "Adm1n-pass", s)
+    with pytest.raises(LoginError, match="Enter a username"):
+        authenticate("", "", s)
+
+    # Changing the secret changes the password.
+    cfg2 = dataclasses.replace(cfg, admin_password="new-pass-2")
+    monkeypatch.setattr(users, "get_settings", lambda: cfg2)
+    seed_accounts(s)
+    assert authenticate("admin", "new-pass-2", s).role is Role.admin
 
 
 def test_throttle_locks_after_repeated_failures():
