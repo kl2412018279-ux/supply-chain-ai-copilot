@@ -47,6 +47,11 @@ class Settings:
         default_factory=lambda: _env("OLLAMA_BASE_URL", "http://localhost:11434")
     )
 
+    # OCR for scanned / photographed documents: auto | tesseract | vision | none.
+    # "auto" uses the vision model when VISION_MODEL is set, else Tesseract when installed.
+    ocr_engine: str = field(default_factory=lambda: _env("OCR_ENGINE", "auto").lower())
+    vision_model: str = field(default_factory=lambda: _env("VISION_MODEL"))
+
     # External data (both optional; the app falls back to offline estimates)
     ors_api_key: str = field(default_factory=lambda: _env("ORS_API_KEY"))
     weather_enabled: bool = field(default_factory=lambda: _env_bool("WEATHER_ENABLED", True))
