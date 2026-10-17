@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -179,6 +180,11 @@ _COMPARE_RE = re.compile(
     r"\b(compare|comparison|vs|versus|cheapest|cheaper|fastest|options?)\b", re.I
 )
 _SPEND_RE = re.compile(r"\b(spend|projected|projection|revenue|budget)\b", re.I)
+_PERIOD_RE = re.compile(
+    r"\b(?:next|over|per|each|this)\s+(?:the\s+)?(?:next\s+)?(?:\d+\s+)?"
+    r"(?:days?|weeks?|months?|quarter|year)\b|\b(?:monthly|weekly)\b",
+    re.I,
+)
 _FORECAST_RE = re.compile(
     r"\b(forecast|predict|expect(?:ed)?|next (?:week|month)|how many containers"
     r"|capacity|volumes?)\b",
@@ -356,7 +362,12 @@ class RuleBasedAgent:
                 args["containers"] = int(m.group(1) or m.group(2))
             out = recorder.run("predict_delay_risk", **args)
             parts.append(self._format_delay(out))
-        elif destination and (_QUOTE_RE.search(query) or _COMPARE_RE.search(query)):
+        elif (
+            destination
+            and (_QUOTE_RE.search(query) or _COMPARE_RE.search(query))
+            # "haulage budget for palm oil over the next 60 days" is a spend projection
+            and not (_SPEND_RE.search(query) and commodities and _PERIOD_RE.search(query))
+        ):
             args = self._quote_args(query, destination, commodities)
             mode = _parse_mode(query)
             if _COMPARE_RE.search(query) or (mode is None and destination_has_options(destination)):
@@ -539,7 +550,11 @@ class RuleBasedAgent:
     def _format_recommendation(out: dict[str, Any]) -> str:
         if "error" in out:
             return f"Could not recommend a route: {out['error']}"
-        lines = [f"**{out['explanation']}**", "", "Options ranked for your priorities:"]
+        lines = [
+            f"**{out['explanation']}**",
+            "",
+            f"Options to {out['destination_label']}, ranked for your priorities:",
+        ]
         for o in out["options"]:
             flag = "" if o["pareto_optimal"] else " (dominated)"
             lines.append(
@@ -590,7 +605,8 @@ class RuleBasedAgent:
                 + (", ".join(met) or "none found")
                 + "."
             )
-        lines = ["**Haulier scorecard** (on-time 45%, quality 25%, compliance 20%, price 10%):"]
+        # No hard-coded weights here: they would drift from the scorecard model.
+        lines = ["**Haulier scorecard** (on-time, quality, compliance and price combined):"]
         lines += [
             f"{s['rank']}. {s['label']}: grade **{s['grade']}** ({s['score']:.2f})" for s in out
         ]
@@ -643,12 +659,21 @@ class RuleBasedAgent:
                 "Upload SOPs or policy PDFs on the Documents tab first."
             )
         terms = {t for t in re.findall(r"[a-z0-9]+", query.lower()) if len(t) > 2}
+        sentences = [
+            (rank, sentence, set(re.findall(r"[a-z0-9]+", sentence.lower())))
+            for rank, doc in enumerate(docs)
+            for sentence in _SENTENCE_SPLIT.split(doc["snippet"])
+        ]
+        # Weight query terms by rarity across the retrieved sentences, so the one sentence
+        # with "heated" beats several that merely repeat "palm oil".
+        idf = {
+            t: math.log((1 + len(sentences)) / (1 + sum(t in words for *_, words in sentences)))
+            for t in terms
+        }
         scored = []
-        for rank, doc in enumerate(docs):
-            for sentence in _SENTENCE_SPLIT.split(doc["snippet"]):
-                overlap = len(terms & set(re.findall(r"[a-z0-9]+", sentence.lower())))
-                if overlap:
-                    scored.append((overlap, -rank, sentence.strip(), doc))
+        for rank, sentence, words in sentences:
+            if overlap := sum(idf[t] for t in terms & words):
+                scored.append((overlap, -rank, sentence.strip(), docs[rank]))
         scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
         best: list = []
         for item in scored:  # chunks overlap, so skip sentences we already have
