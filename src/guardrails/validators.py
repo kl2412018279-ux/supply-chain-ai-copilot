@@ -1,7 +1,8 @@
 """Input and output guardrails for the copilot.
 
-Input:  length limits, prompt-injection / jailbreak detection, and a topical
-        allow-list so the assistant refuses non-supply-chain questions.
+Input:  length limits, prompt-injection / jailbreak detection, refusal of bulk
+        personal-data requests, and a topical allow-list so the assistant refuses
+        non-supply-chain questions.
 Output: secret / PII redaction and strict Pydantic schema validation of the
         final response (see ``src.guardrails.schemas``).
 
@@ -24,6 +25,7 @@ class GuardrailCategory(str, Enum):
     empty = "empty"
     too_long = "too_long"
     prompt_injection = "prompt_injection"
+    personal_data = "personal_data"
     off_topic = "off_topic"
 
 
@@ -46,9 +48,17 @@ INJECTION_PATTERNS = [
     r"<\s*/?\s*(system|assistant|im_start|im_end)\s*>",
     r"\b(drop|truncate|delete\s+from|alter)\s+table\b",
     r"\b(api[_\s-]?key|password|credentials?|secret\s+key)s?\b.{0,20}\b(give|show|reveal|print|what)",
-    r"\b(give|show|reveal|print|what)\b.{0,30}\b(api[_\s-]?key|password|credentials?)\b",
+    r"\b(give|show|reveal|print|what)\b.{0,30}\b(api[_\s-]?keys?|passwords?|credentials?)\b",
 ]
 _INJECTION_RE = [re.compile(p, re.IGNORECASE) for p in INJECTION_PATTERNS]
+
+# Requests to extract personal data (contact details, identity numbers) about people.
+_PERSONAL_DATA_RE = re.compile(
+    r"\b(list|export|dump|give|show|send|download|extract|all|every)\b.{0,60}"
+    r"\b(e-?mail\s+address(es)?|home\s+address(es)?|phone\s+numbers?|mobile\s+numbers?"
+    r"|(ic|nric|passport|identity\s+card)\s+(numbers?|nos?)|bank\s+account\s+(numbers?|details))\b",
+    re.IGNORECASE,
+)
 
 DOMAIN_TERMS = {
     # supply chain & operations
@@ -134,6 +144,12 @@ DOMAIN_TERMS = {
     "certification",
     "dangerous",
     "goods",
+    "profit",
+    "profitable",
+    "profitability",
+    "loss",
+    "lane",
+    "lanes",
     # freight forwarding & port operations (Malaysia)
     "forwarder", "forwarding", "haulage", "haulier", "prime", "mover", "trailer",
     "teu", "teus", "containers", "20ft", "40ft", "ft", "port", "klang", "westport", "northport",
@@ -173,6 +189,12 @@ def check_input(query: str) -> GuardrailResult:
                 category=GuardrailCategory.prompt_injection,
                 reason="The request looks like a prompt-injection attempt and was blocked.",
             )
+    if _PERSONAL_DATA_RE.search(text):
+        return GuardrailResult(
+            allowed=False,
+            category=GuardrailCategory.personal_data,
+            reason="I can't share personal data such as contact details or identity numbers.",
+        )
     if _GREETING_RE.match(text):
         return GuardrailResult(allowed=True, category=GuardrailCategory.ok)
     words = set(_WORD_RE.findall(text.lower()))
