@@ -29,6 +29,8 @@ os.environ.update(
         "AUTO_INGEST": "false",
         "ORS_API_KEY": "",
         "WEATHER_ENABLED": "false",
+        "OCR_ENGINE": "auto",
+        "VISION_MODEL": "",
     }
 )
 
