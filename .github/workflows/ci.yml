@@ -61,6 +61,15 @@ jobs:
         env:
           EMBEDDING_BACKEND: hashing
           RERANKER_BACKEND: lexical
+      - name: Copilot answer-quality eval (offline rule-based agent)
+        if: matrix.python-version == '3.12'
+        run: python -m src.evals.run --agent rule --fail-under 0.9
+        env:
+          LLM_PROVIDER: none
+          EMBEDDING_BACKEND: hashing
+          RERANKER_BACKEND: lexical
+          WEATHER_ENABLED: "false"
+          ORS_API_KEY: ""
 
   docker:
     runs-on: ubuntu-latest
