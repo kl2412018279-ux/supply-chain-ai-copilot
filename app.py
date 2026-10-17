@@ -12,6 +12,16 @@ import streamlit as st
 
 from src.agent.copilot import get_copilot
 from src.api.main import bootstrap
+from src.auth.users import (
+    DEMO_ACCOUNTS,
+    ROLE_LABELS,
+    LoginError,
+    Role,
+    User,
+    authenticate,
+    demo_user,
+)
+from src.config import PROJECT_ROOT, get_settings
 from src.costing.rates import get_rate_card
 from src.forecasting.predict import ModelNotTrainedError, get_forecaster
 from src.rag.vector_store import get_vector_store
@@ -30,7 +40,20 @@ def _startup() -> bool:
 
 _startup()
 
+
+def _as_dict(u: User) -> dict:
+    return {"username": u.username, "role": u.role.value, "display_name": u.display_name,
+            "demo": u.demo}  # fmt: skip
+
+
 inject_css()
+
+# ----------------------------------------------------------------------------- who is viewing
+# No login wall: visitors browse as a demo user and can switch role in the sidebar.
+if "user" not in st.session_state:
+    st.session_state["user"] = _as_dict(demo_user(Role.manager))
+_u = st.session_state["user"]
+user = User(_u["username"], Role(_u["role"]), _u["display_name"], _u["demo"])
 
 with st.sidebar:
     st.html(
@@ -63,34 +86,63 @@ with st.sidebar:
         st.html("".join(f'<div class="kv"><span>{k}</span><span>{v}</span></div>' for k, v in info))
         if copilot.agent.name == "rule-based":
             st.caption("Offline mode: set `GROQ_API_KEY` to enable the LLM agent.")
+    st.divider()
+    if user.demo:
+        roles = [r for _, r, _ in DEMO_ACCOUNTS]
+        picked = st.segmented_control(
+            "View as", roles, default=user.role, format_func=lambda r: r.value.capitalize(),
+            width="stretch",
+            help="See the platform the way each role does. Pages differ by role.",
+        )  # fmt: skip
+        if picked and picked is not user.role:
+            st.session_state["user"] = _as_dict(demo_user(picked))
+            st.rerun()
+        st.caption(f"{user.display_name} · {ROLE_LABELS[user.role]}. Demo view: uploads stay in "
+                   "your session and alerts can't be sent.")  # fmt: skip
+        if get_settings().admin_password:
+            with st.expander("Admin sign in", icon=":material/lock:"):
+                with st.form("admin_login", border=False):
+                    name = st.text_input("Username", autocomplete="username")
+                    pw = st.text_input("Password", type="password", autocomplete="current-password")
+                    go = st.form_submit_button("Sign in", width="stretch")
+                if go:
+                    try:
+                        admin = authenticate(name, pw)
+                    except LoginError as exc:
+                        st.error(str(exc))
+                    else:
+                        st.session_state["user"] = _as_dict(admin)
+                        st.rerun()
+    else:
+        who, out = st.columns([3, 1.3], vertical_alignment="center")
+        who.markdown(f"**{user.display_name}**  \n{ROLE_LABELS[user.role]}")
+        if out.button("Sign out", key="sign_out"):
+            st.session_state["user"] = _as_dict(demo_user(Role.manager))
+            st.rerun()
 
-page = st.navigation(
-    {
-        "": [
-            st.Page(
-                "views/control_tower.py",
-                title="Control tower",
-                icon=":material/radar:",
-                default=True,
-            ),
-            st.Page("views/copilot.py", title="Copilot", icon=":material/forum:"),
-        ],
-        "Commercial": [
-            st.Page("views/quote.py", title="Quote", icon=":material/request_quote:"),
-            st.Page("views/planner.py", title="Route planner", icon=":material/alt_route:"),
-        ],
-        "Operations": [
-            st.Page("views/delays.py", title="Delay risk", icon=":material/schedule:"),
-            st.Page("views/forecast.py", title="Forecast", icon=":material/insights:"),
-            st.Page("views/intake.py", title="Document intake", icon=":material/document_scanner:"),
-        ],
-        "Partners": [
-            st.Page("views/hauliers.py", title="Hauliers", icon=":material/local_shipping:")
-        ],
-        "Knowledge": [
-            st.Page("views/documents.py", title="Documents", icon=":material/description:")
-        ],
-    },
-    position="top",
-)
-page.run()
+# (section, file stem, title, icon). Pages whose file is missing are skipped.
+PAGES = [
+    ("", "control_tower", "Control tower", ":material/radar:"),
+    ("", "copilot", "Copilot", ":material/forum:"),
+    ("Commercial", "quote", "Quote", ":material/request_quote:"),
+    ("Commercial", "planner", "Route planner", ":material/alt_route:"),
+    ("Operations", "delays", "Delay risk", ":material/schedule:"),
+    ("Operations", "forecast", "Forecast", ":material/insights:"),
+    ("Operations", "intake", "Document intake", ":material/document_scanner:"),
+    ("Operations", "data_import", "Data import", ":material/upload_file:"),
+    ("Operations", "alerts", "Alerts", ":material/notifications:"),
+    ("Partners", "hauliers", "Hauliers", ":material/local_shipping:"),
+    ("Knowledge", "documents", "Documents", ":material/description:"),
+    ("Knowledge", "evals", "AI quality", ":material/fact_check:"),
+]
+
+sections: dict[str, list] = {}
+for section, stem, title, icon in PAGES:
+    if not (PROJECT_ROOT / "views" / f"{stem}.py").exists():
+        continue
+    if not user.can_open(stem):
+        continue
+    sections.setdefault(section, []).append(
+        st.Page(f"views/{stem}.py", title=title, icon=icon, default=stem == "control_tower")
+    )
+st.navigation(sections, position="top").run()

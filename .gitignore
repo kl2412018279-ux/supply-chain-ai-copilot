@@ -15,3 +15,4 @@ data/processed/*
 !data/processed/.gitkeep
 .ipynb_checkpoints/
 *.egg-info/
+reports/

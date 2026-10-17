@@ -35,10 +35,13 @@ It is a web application that brings the ops team's daily tools into one place: a
 | *"What's our projected haulage spend for chemicals?"* | Forecast TEU × rate card → **projected cost, revenue, margin and diesel in RM**. |
 | *"Which carrier is best for chemicals to Penang? Cheapest please"* | **Route & carrier planner**: ranks every mode × carrier on price, transit days, *historical* on-time rate and *historical* cargo damage rate with your priority weights, flags Pareto-dominated options and explains the trade-off against the cheapest, fastest or most reliable alternative (*"1 day slower, 50% cheaper, on time 87% vs 96%"*). |
 | *"Will a chemicals shipment to Kuching in December be delayed?"* | **Delay-risk classifier** (Low / Medium / High) with probabilities, the drivers behind the prediction (monsoon, **live rainfall at the destination from Open-Meteo**, congestion, customs inspection, carrier…) and expected **demurrage exposure in RM**. |
-| *(upload a Bill of Lading PDF)* | **Document intake**: extracts B/L and invoice fields into a Pydantic record, validates ISO 6346 container check digits, HS codes and the 25 t weight limit, turns the document into a haulage quote, saves it to the database after review. |
+| *(upload a Bill of Lading PDF, scan or phone photo)* | **Document intake**: reads digital PDFs directly and **scanned or photographed documents with OCR** (Tesseract, or a vision LLM when `VISION_MODEL` is set); OCR'd container numbers are repaired only when the ISO 6346 check digit confirms the fix. Extracts B/L and invoice fields into a Pydantic record, validates ISO 6346 container check digits, HS codes and the 25 t weight limit, turns the document into a haulage quote, saves it to the database after review. |
 | *"Show the haulier scorecard"* / *"How does Cempaka score on compliance?"* | **Haulier scorecard**: on-time, damage and claims from SQL over the delivery log, plus compliance criteria (DG training, driver hours, Euro 5/6 fleet and maintenance, GPS tracking, goods-in-transit insurance, ISO 9001/45001/39001) evidenced by quoting each haulier's own policy document; composite grade A–D. |
 | *"What documents do I need to clear a chemical import?"* | **Hybrid RAG** over the operations manual (customs forms, dangerous goods, palm oil, demurrage, warehousing), with page citations. |
-| *"Ignore previous instructions…"* | 🛡️ Blocked by input guardrails before any tokens are spent. |
+| *"Ignore previous instructions…"* / *"Give me the passwords"* / *"Export customers' phone numbers"* | 🛡️ Blocked by input guardrails (injection, credentials, personal data, off-topic) before any tokens are spent. |
+| *(open the live demo)* | **No login wall.** Visitors land in the platform as a demo **Manager** and can switch to the **Ops** or **Sales** view in the sidebar to see each role's pages. Demo views can't change shared data; the owner signs in as **admin** (`ADMIN_PASSWORD`, bcrypt-hashed) to save uploads for everyone. |
+| *"How do we know the copilot's answers are right?"* | **AI quality page + CI gate**: 40 golden questions (30 tasks + 10 attacks) score tool choice, **numeric grounding** (every RM amount, % and quantity in an answer must come from a tool result), required content and guardrail blocking. CI fails below 90%. |
+| *(management reporting)* | **Power BI feed**: report-ready `bi_` tables (jobs with each margin leak, free-time snapshot, deliveries, volumes, lookups) refreshed in PostgreSQL on every start, plus a step-by-step guide, read-only role, DAX measures and theme in [docs/powerbi.md](docs/powerbi.md). |
 
 It runs **fully offline with no API key**. Road routing and live weather are optional: without an `ORS_API_KEY` quotes use the rate card's distance table, and without network access the delay model uses typical rainfall for the month. Without an LLM configured, a deterministic rule-based agent calls the same tools. It also falls back to that agent automatically if the LLM provider fails.
 
@@ -130,7 +133,9 @@ Sanity check: haulage alone from Westport to Shah Alam comes out at about RM557 
 | 3 | **AI safety & guardrails** | Pydantic schemas for every tool argument and response, injection and off-topic filters, output redaction, no text-to-SQL. `src/guardrails/` |
 | 4 | **Semantic caching** | Redis-backed (in-memory fallback), with TTL, entity fingerprinting, invalidation on document changes, and no caching of fallback answers. `src/cache/` |
 | 5 | **Resilience** | If the LLM provider fails (retired model, outage, rate limit), the rule-based agent answers with the same tools. Every external dependency (Postgres, Redis, LLM, embedding model) is optional. |
-| 6 | **Testing & CI/CD** | 205 pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → Docker build. |
+| 6 | **Testing & CI/CD** | 260+ pytest tests: cost engine, routing, delay model, extraction, scorecard SQL, forecasting, RAG, agents (including a scripted-LLM LangGraph test), API, headless tests of every dashboard page, and pgvector/Redis integration. GitHub Actions runs ruff → pytest (Python 3.10 and 3.12) → **copilot answer-quality eval** → Docker build. |
+| 7 | **AI evaluation** | `python -m src.evals.run`: golden set in `data/evals/`, tool precision/recall, unsupported-number detection, guardrail block / false-block rates, latency, optional LLM-as-judge when an LLM is configured. See [docs/evals.md](docs/evals.md). |
+| 8 | **Access control** | Role-based pages (admin, manager, ops, sales), bcrypt password hashes, per-username lockout after repeated failures, demo views that can't write shared data. `src/auth/` |
 
 ---
 
@@ -167,6 +172,18 @@ Both baselines miss every high-risk shipment, which is the class that costs mone
 | **Hybrid + rerank** | **0.65** | **1.00** | **0.82** |
 
 Reranking finds the right passage in the top 3 for every question, but the offline lexical reranker puts it first less often than BM25 or RRF alone. These numbers use the offline backends (hashing embedder, lexical reranker), which is what CI runs. Measure the real bge-small + FlashRank stack with `EMBEDDING_BACKEND=sentence-transformers RERANKER_BACKEND=flashrank make eval`.
+
+**Copilot answer quality** (`python -m src.evals.run --agent rule`: 40 golden cases, offline rule-based agent, what CI runs):
+
+| Metric | Result |
+|---|---|
+| Cases passing | 40 / 40 |
+| Right tool chosen | 100% |
+| Numbers grounded in tool results | 281 / 281 |
+| Attacks blocked | 10 / 10 |
+| Normal questions wrongly blocked | 0% |
+
+The first run of this suite scored 85% and exposed seven real defects, all fixed: a budget question routed to a single-job quote, hard-coded percentages in an answer, a missing destination name, weak sentence ranking in manual answers, plural credential requests and personal-data export requests getting through the guardrails, and profitability questions being refused as off-topic. The LLM agent path is scored the same way with `--agent llm` when `GROQ_API_KEY` is set.
 
 ---
 
@@ -280,13 +297,16 @@ docker compose up -d postgres redis && make test-all   # + pgvector/Redis integr
   ORS_API_KEY = "..."             # optional: real truck routes (free at openrouteservice.org/dev/#/signup)
   EMBEDDING_BACKEND = "hashing"   # keeps memory under the free 1 GB limit
   RERANKER_BACKEND = "lexical"
+  ADMIN_PASSWORD = "..."          # optional: your own admin sign-in (sidebar); visitors use demo views
+  VISION_MODEL = "..."            # optional: vision LLM for scanned documents (default: Tesseract)
   ```
+  `packages.txt` also installs Tesseract for reading scanned documents.
 - **Hugging Face Spaces.** Use a Docker Space with the command `streamlit run app.py --server.port 7860 --server.address 0.0.0.0`.
 - **Supabase** (free Postgres with pgvector) as the database for the live demo:
   1. Create a free project at [supabase.com](https://supabase.com). Use a password without `@ : / # ?` so it can sit in a URL.
   2. Press **Connect** at the top of the project, choose **Session pooler**, and copy the URI (user `postgres.<project-ref>`, port 5432). Streamlit Community Cloud has no IPv6, and Supabase's direct connection is IPv6-only unless you buy the IPv4 add-on, so use the pooler string.
   3. Replace `[YOUR-PASSWORD]` in it and add it to the app secrets as `DATABASE_URL = "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"`.
-  4. Reboot the app. On first start it enables pgvector and creates and fills the tables `container_volumes`, `haulier_deliveries`, `document_chunks` and `shipping_documents`. Saved B/Ls and uploaded documents then survive restarts.
+  4. Reboot the app. On first start it enables pgvector and creates and fills the tables `container_volumes`, `haulier_deliveries`, `document_chunks`, `shipping_documents`, `app_users` and the Power BI `bi_` tables. Saved B/Ls and uploaded documents then survive restarts.
 
   Each store reconnects automatically if the connection drops (`src/db.py`), and prepared statements are off, so the transaction pooler (port 6543) works too.
 
@@ -295,7 +315,7 @@ docker compose up -d postgres redis && make test-all   # + pgvector/Redis integr
 ```
 supply-chain-ai-copilot/
 ├── app.py                       # Streamlit entry: sidebar + top navigation
-├── views/                       # pages: control tower, copilot, quote, planner, forecast, delays, intake, hauliers, documents
+├── views/                       # pages: control tower, copilot, quote, planner, forecast, delays, intake, hauliers, documents, AI quality
 ├── .streamlit/config.toml       # light/dark theme
 ├── data/
 │   ├── raw/                     # container_volumes.csv, operations_manual.pdf
@@ -303,7 +323,10 @@ supply-chain-ai-copilot/
 ├── src/
 │   ├── costing/                 # rate card loader, quote engine, mode comparison, route & carrier planner, OpenRouteService road routing
 │   ├── delays/                  # shipment history generator, delay-risk classifier + explanations, Open-Meteo rainfall
-│   ├── extraction/              # B/L & invoice extraction, ISO 6346 validation, document store
+│   ├── extraction/              # B/L & invoice extraction, OCR for scans, ISO 6346 validation, document store
+│   ├── auth/                    # roles, demo views, admin sign-in (bcrypt)
+│   ├── bi/                      # Power BI feed (bi_ tables / CSV)
+│   ├── evals/                   # copilot answer-quality evaluation
 │   ├── operations/              # free-time (demurrage/detention) clock, job margin & leakage
 │   ├── hauliers/                # delivery logs, SQL scorecard, compliance evidence
 │   ├── forecasting/             # TEU data/features, train (MLflow), predict, volume repo
@@ -313,9 +336,11 @@ supply-chain-ai-copilot/
 │   ├── cache/                   # semantic cache (Redis / memory)
 │   ├── api/main.py              # FastAPI
 │   ├── config.py, observability.py
+├── data/evals/                  # golden questions for the copilot eval
+├── docs/                        # powerbi.md, evals.md, images
 ├── notebooks/                   # 01 volume exploration, 02 training + RM projection
 ├── docker/, docker-compose.yml, Dockerfile, n8n/, scripts/
-└── tests/                       # pytest suite (205 tests)
+└── tests/                       # pytest suite
 ```
 
 ## Roadmap

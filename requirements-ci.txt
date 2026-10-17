@@ -14,6 +14,12 @@ psycopg[binary]>=3.1.0
 pgvector>=0.2.5
 redis>=5.0.0
 httpx>=0.27.0
+bcrypt>=4.1.0
+
+# Scanned documents (OCR); Tesseract itself comes from packages.txt / the Dockerfile
+pypdfium2>=4.30.0
+pillow>=10.0.0
+pytesseract>=0.3.10
 
 # Agent graph + dashboard (pure Python, tested in CI)
 langgraph>=0.2.0

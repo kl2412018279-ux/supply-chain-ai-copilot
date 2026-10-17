@@ -33,6 +33,7 @@ from src.delays.model import (
 )
 from src.delays.model import ModelNotTrainedError as DelayModelNotTrainedError
 from src.extraction.extract import ExtractionResult, ShippingDocument, extract
+from src.extraction.ocr import IMAGE_SUFFIXES, OcrUnavailable
 from src.extraction.store import get_document_store
 from src.forecasting.predict import (
     MAX_HORIZON_DAYS,
@@ -82,6 +83,14 @@ def bootstrap() -> None:
         get_volume_repository()
         get_document_store()
         get_delivery_log()
+        from src.auth.users import get_user_store  # noqa: PLC0415
+        from src.bi.export import refresh as refresh_bi  # noqa: PLC0415
+
+        get_user_store()  # creates app_users and the admin account (if configured)
+        try:
+            refresh_bi()  # Power BI feed (bi_ tables)
+        except Exception:
+            logger.exception("Power BI feed refresh failed; the app continues without it.")
 
 
 @asynccontextmanager
@@ -300,10 +309,14 @@ def haulier_trend(haulier: str) -> list[dict[str, Any]]:
 
 @app.post("/documents/extract", response_model=ExtractionResult)
 async def documents_extract(file: UploadFile = File(...)) -> ExtractionResult:
-    """Extract and validate fields from a Bill of Lading or commercial invoice PDF."""
+    """Extract and validate fields from a Bill of Lading or commercial invoice.
+
+    Accepts digital PDFs, image-only (scanned) PDFs and photos/scans (PNG, JPEG, WebP,
+    TIFF); scans are OCR'd first and ``text_source`` says which engine read the text.
+    """
     filename = file.filename or "document.pdf"
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=415, detail="Upload a PDF.")
+    if Path(filename).suffix.lower() not in {".pdf", *IMAGE_SUFFIXES}:
+        raise HTTPException(status_code=415, detail="Upload a PDF or an image (PNG/JPEG/TIFF).")
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 20 MB).")
@@ -313,6 +326,8 @@ async def documents_extract(file: UploadFile = File(...)) -> ExtractionResult:
         return await run_in_threadpool(
             extract, data, Path(filename).name, build_llm(get_settings())
         )
+    except OcrUnavailable as exc:  # a scan, but this server has no OCR engine
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:

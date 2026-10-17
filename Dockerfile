@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # libgomp1: OpenMP runtime required by LightGBM
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 curl \
+    && apt-get install -y --no-install-recommends libgomp1 curl tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

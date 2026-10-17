@@ -279,3 +279,18 @@ def test_routes_margin_question_with_window(agent):
 def test_quote_with_margin_word_still_quotes(agent):
     out = agent.run("Quote a 40ft container to Shah Alam and show the margin")
     assert out.tool_calls[0].name == "quote_container_job"
+
+
+def test_budget_over_a_period_is_spend_not_a_quote(agent):
+    out = agent.run(
+        "What haulage budget do we need for palm oil deliveries to Pasir Gudang "
+        "over the next 60 days?"
+    )
+    assert _tool_names(out) == ["estimate_haulage_spend"]
+    args = out.tool_calls[0].arguments
+    assert args["horizon_days"] == 60 and args["destination"] == "pasir-gudang"
+
+
+def test_document_answer_prefers_sentence_with_rare_query_terms(agent):
+    out = agent.run("What temperature should crude palm oil be heated to?")
+    assert "50 and 55 degrees" in out.answer
