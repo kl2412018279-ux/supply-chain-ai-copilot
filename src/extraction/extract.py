@@ -4,13 +4,17 @@ Pipeline::
 
     PDF -> text (pypdf) -> fields (LLM structured output, or rule-based parser offline)
         -> ShippingDocument (Pydantic) -> business validation -> database
+    image / image-only PDF -> OCR (src.extraction.ocr: Tesseract or a vision model) -> text
 
 Validation goes beyond types: ISO 6346 container check digits, HS-code format,
 gross weight per container against the 25 t Port Klang limit, missing mandatory
 fields per document type. The result also maps the document onto the quote engine
 (cargo type from the HS chapter, destination from the consignee address).
 
-Scanned images have no text layer; those need OCR or a vision model first.
+Scanned images and photos have no text layer; they go through OCR first and the result
+carries a warning, because OCR can misread characters (container numbers and weights
+especially). The rule parser tolerates common OCR noise (stray "|", "B / L No", O/0 in
+container numbers when that makes the ISO 6346 check digit valid).
 """
 
 from __future__ import annotations
@@ -19,11 +23,13 @@ import io
 import logging
 import re
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 from src.extraction.iso6346 import find_containers, is_valid
+from src.extraction.ocr import IMAGE_SUFFIXES, OcrUnavailable, load_images, ocr_text, page_images
 
 logger = logging.getLogger(__name__)
 
@@ -79,22 +85,73 @@ class ExtractionResult(BaseModel):
     missing_fields: list[str]
     suggested_quote: dict[str, Any] | None = None
     text_chars: int
+    text_source: str = Field(
+        default="pdf text", description='"pdf text", "ocr: tesseract" or "ocr: vision"'
+    )
+    ocr_confidence: float | None = Field(default=None, description="mean word confidence 0-1")
+    warnings: list[str] = Field(default_factory=list)
+    raw_text: str = Field(default="", description="text the fields were parsed from")
 
 
 # ------------------------------------------------------------------------------ text
 
 
-def pdf_text(data: bytes) -> str:
+MIN_CHARS_PER_PAGE = 40  # fewer non-space characters than this per page -> scanned, OCR it
+OCR_WARNING = (
+    "Text was read by OCR ({engine}): check the fields against the document, especially "
+    "container numbers and weights. Misread container numbers usually fail the ISO 6346 "
+    "check digit."
+)
+
+
+def pdf_pages_text(data: bytes) -> list[str]:
+    """Text layer of each PDF page (empty strings for scanned pages)."""
     from pypdf import PdfReader  # noqa: PLC0415
 
     reader = PdfReader(io.BytesIO(data))
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+    return [page.extract_text() or "" for page in reader.pages]
+
+
+def pdf_text(data: bytes) -> str:
+    return "\n".join(pdf_pages_text(data))
+
+
+def needs_ocr(pages: list[str]) -> bool:
+    """True when the text layer is missing or too thin to be the real document text."""
+    chars = sum(len(re.sub(r"\s", "", p)) for p in pages)
+    return chars < MIN_CHARS_PER_PAGE * max(len(pages), 1)
+
+
+def is_image(data: bytes, file_name: str) -> bool:
+    if data.lstrip()[:5] == b"%PDF-":
+        return False
+    return Path(file_name).suffix.lower() in IMAGE_SUFFIXES
+
+
+def document_text(data: bytes, file_name: str) -> tuple[str, str, float | None]:
+    """(text, text_source, OCR confidence) for a PDF or an image.
+
+    Digital PDFs use their text layer; images and image-only PDFs are OCR'd.
+    Raises ValueError (OcrUnavailable) when OCR is needed but no engine is available.
+    """
+    if not is_image(data, file_name):
+        pages = pdf_pages_text(data)
+        if not needs_ocr(pages):
+            return "\n".join(pages), "pdf text", None
+    try:
+        images = load_images(data) if is_image(data, file_name) else page_images(data)
+        result = ocr_text(images)
+    except OcrUnavailable as exc:
+        raise OcrUnavailable(
+            f"{file_name} has no text layer (scanned image?) and cannot be OCR'd: {exc}"
+        ) from exc
+    return result.text, f"ocr: {result.engine}", result.confidence
 
 
 # --------------------------------------------------------------------- rule parser
 
 LABELS: dict[str, list[str]] = {
-    "bl_number": [r"B/?L\s*(?:No|Number)", r"Bill of Lading\s*(?:No|Number)"],
+    "bl_number": [r"B\s*/?\s*L\s*(?:No|Number)", r"Bill of Lading\s*(?:No|Number)"],
     "invoice_number": [r"Invoice\s*(?:No|Number)"],
     "issue_date": [r"Date of Issue", r"Invoice Date", r"Issue Date", r"Date"],
     "shipper": [r"Shipper", r"Seller", r"Exporter"],
@@ -118,7 +175,7 @@ INCOTERMS = r"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b"
 
 def _field(text: str, key: str) -> str | None:
     for label in LABELS[key]:
-        m = re.search(rf"^\s*{label}\s*[:.]\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
+        m = re.search(rf"^\s*{label}\s*\.?\s*[:;.]\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
         if m:
             return m.group(1).strip()
     return None
@@ -127,14 +184,26 @@ def _field(text: str, key: str) -> str | None:
 def _weight_kg(raw: str | None) -> float | None:
     if not raw:
         return None
-    m = re.search(r"([\d,]+(?:\.\d+)?)\s*(KGS?|KILOGRAMS?|MT|TONNES?|TONS?)", raw, re.IGNORECASE)
+    m = re.search(
+        # thousands separators may be "," or (OCR) ", " / " "
+        r"(\d{1,3}(?:[, ]\s?\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(KGS?|KILOGRAMS?|MT|TONNES?|TONS?)",
+        raw,
+        re.IGNORECASE,
+    )
     if not m:
         return None
-    value = float(m.group(1).replace(",", ""))
+    value = float(re.sub(r"[, ]", "", m.group(1)))
     return value * 1000 if m.group(2).upper().startswith(("MT", "TON")) else value
 
 
+def clean_ocr_noise(text: str) -> str:
+    """Cheap fixes for OCR noise: stray "|" from table rules and runs of spaces."""
+    text = re.sub(r"(?<!\S)\|+|\|+(?!\S)", " ", text)
+    return re.sub(r"[ \t]+", " ", text)
+
+
 def parse_rules(text: str) -> ShippingDocument:
+    text = clean_ocr_noise(text)
     upper = text.upper()
     doc_type = (
         DocType.bill_of_lading
@@ -144,13 +213,19 @@ def parse_rules(text: str) -> ShippingDocument:
         else DocType.unknown
     )
     size_raw = _field(text, "container_size") or ""
-    size = re.search(r"\b(20|40|45)\s*['’]|\b(20|40|45)\s*(?:FT|FOOT|GP|HC|DV)", size_raw.upper())
+    size = re.search(
+        r"\b(20|40|45)\s*['’‘`´]|\b(20|40|45)\s*(?:FT|FOOT|GP|HC|DV)", size_raw.upper()
+    )
     count = re.search(r"\b(\d+)\s*[xX×]\s*(?:20|40|45)", size_raw)
     # Read containers from the container line; B/L numbers often share the same shape.
-    containers = find_containers(_field(text, "container_numbers") or "")
+    containers = find_containers(_field(text, "container_numbers") or "", repair=True)
     doc_number = _field(text, "bl_number") or _field(text, "invoice_number")
     if not containers:
-        containers = [c for c in find_containers(text) if c != re.sub(r"\W", "", doc_number or "")]
+        containers = [
+            c
+            for c in find_containers(text, repair=True)
+            if c != re.sub(r"\W", "", doc_number or "")
+        ]
     amount_raw = _field(text, "total_amount") or ""
     amount = re.search(r"([A-Z]{3})\s*([\d,]+(?:\.\d+)?)", amount_raw)
     incoterm = re.search(INCOTERMS, _field(text, "incoterm") or "", re.IGNORECASE)
@@ -202,7 +277,7 @@ def parse_llm(text: str, llm) -> ShippingDocument:
         doc = ShippingDocument(**doc)
     # Never trust the model alone for identifiers: keep only container numbers that
     # really appear in the source text.
-    in_text = set(find_containers(text))
+    in_text = set(find_containers(text, repair=True))
     doc.container_numbers = [c for c in doc.container_numbers if c in in_text] or sorted(in_text)
     return doc
 
@@ -322,11 +397,15 @@ def suggested_quote(doc: ShippingDocument) -> dict[str, Any] | None:
 
 
 def extract(data: bytes, file_name: str, llm=None) -> ExtractionResult:
-    """Extract, validate and map one PDF. Uses ``llm`` when given, rules otherwise."""
-    text = pdf_text(data)
+    """Extract, validate and map one PDF or image. Uses ``llm`` when given, rules otherwise.
+
+    Images and PDFs without a usable text layer are OCR'd first (see ``document_text``).
+    """
+    text, source, confidence = document_text(data, file_name)
     if len(text.strip()) < 20:
         raise ValueError(
-            f"{file_name} has no text layer (scanned image?). Run OCR or a vision model first."
+            f"{file_name} has no text layer"
+            + (" and OCR found no readable text." if source != "pdf text" else ".")
         )
     method = "rules"
     doc = None
@@ -338,6 +417,9 @@ def extract(data: bytes, file_name: str, llm=None) -> ExtractionResult:
     if doc is None:
         doc = parse_rules(text)
     issues, missing = validate(doc)
+    warnings = []
+    if source.startswith("ocr"):
+        warnings.append(OCR_WARNING.format(engine=source.removeprefix("ocr: ")))
     return ExtractionResult(
         file_name=file_name,
         method=method,
@@ -346,4 +428,8 @@ def extract(data: bytes, file_name: str, llm=None) -> ExtractionResult:
         missing_fields=missing,
         suggested_quote=suggested_quote(doc),
         text_chars=len(text),
+        text_source=source,
+        ocr_confidence=confidence,
+        warnings=warnings,
+        raw_text=text,
     )

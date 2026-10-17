@@ -34,11 +34,28 @@ def is_valid(number: str) -> bool:
     return bool(re.fullmatch(r"[A-Z]{3}[UJZ]\d{7}", n)) and check_digit(n[:10]) == int(n[10])
 
 
-def find_containers(text: str) -> list[str]:
-    """All container numbers in ``text``, normalised to 11 characters, in order."""
+# OCR confusions: digits read as letters in the serial, letters read as digits in the owner.
+FUZZY_RE = re.compile(r"\b([A-Z0158]{3}[UJZ])\s?([0-9OILSB]{6})\s?-?\s?([0-9OILSB])\b")
+_TO_DIGIT = str.maketrans("OILSB", "01158")
+_TO_LETTER = str.maketrans("0158", "OISB")
+
+
+def find_containers(text: str, repair: bool = False) -> list[str]:
+    """All container numbers in ``text``, normalised to 11 characters, in order.
+
+    With ``repair`` (OCR text), near-misses such as ``QZXU26lOO42`` are read as
+    ``QZXU2610042``, but only when the repaired number passes the check digit; a
+    well-formed number with a wrong check digit is kept as-is so validation flags it.
+    """
     seen: list[str] = []
-    for owner, serial, digit in CONTAINER_RE.findall(text.upper()):
+    pattern = FUZZY_RE if repair else CONTAINER_RE
+    for owner, serial, digit in pattern.findall(text.upper()):
         n = f"{owner}{serial}{digit}"
+        if repair and not re.fullmatch(r"[A-Z]{3}[UJZ]\d{7}", n):
+            fixed = owner.translate(_TO_LETTER) + f"{serial}{digit}".translate(_TO_DIGIT)
+            if not is_valid(fixed):
+                continue
+            n = fixed
         if n not in seen:
             seen.append(n)
     return seen
