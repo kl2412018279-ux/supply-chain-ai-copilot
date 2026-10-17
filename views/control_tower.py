@@ -20,6 +20,7 @@ from views.common import (
     MUTED,
     WARN,
     page_header,
+    page_link,
     rm,
     rm_short,
     section,
@@ -327,4 +328,4 @@ if scored is not None:
                 f"**{dests[r.destination]['label']}** · {r.commodity}  \n"
                 f"{carriers[r.carrier]['label']} by {r.mode} · P(High) {r.p_high:.0%}"
             )
-    st.page_link("views/delays.py", label="Open delay risk", icon=":material/arrow_forward:")
+    page_link("views/delays.py", label="Open delay risk", icon=":material/arrow_forward:")
