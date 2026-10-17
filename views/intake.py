@@ -10,8 +10,9 @@ from src.config import PROJECT_ROOT, get_settings
 from src.costing.quote import QuoteRequest, build_quote
 from src.extraction.extract import ShippingDocument, extract, validate
 from src.extraction.iso6346 import is_valid
+from src.extraction.ocr import IMAGE_SUFFIXES
 from src.extraction.store import get_document_store
-from views.common import page_header, rm
+from views.common import page_header, pill, rm
 
 SAMPLES = PROJECT_ROOT / "data" / "samples"
 EDITABLE = [
@@ -23,22 +24,27 @@ EDITABLE = [
 
 page_header(
     "Document intake",
-    "Upload a Bill of Lading or commercial invoice. Fields are extracted (LLM when configured, "
-    "rule-based offline), validated, and saved to the database after review.",
+    "Upload a Bill of Lading or commercial invoice: a PDF, a scan or a phone photo. Scans are "
+    "OCR'd, fields are extracted (LLM when configured, rule-based offline), validated, and "
+    "saved to the database after review.",
 )
 
 src_col, file_col = st.columns([1, 2], vertical_alignment="bottom")
 source = src_col.segmented_control("Source", ["Sample", "Upload"], default="Sample") or "Sample"
 if source == "Sample":
-    samples = sorted(p.name for p in SAMPLES.glob("*.pdf"))
+    samples = sorted(
+        p.name for p in SAMPLES.iterdir() if p.suffix.lower() in {".pdf", *IMAGE_SUFFIXES}
+    )
     name = file_col.selectbox("Sample document (fictional)", samples)
     data = (SAMPLES / name).read_bytes() if name else None
 else:
-    upload = file_col.file_uploader("PDF", type=["pdf"])
+    upload = file_col.file_uploader(
+        "PDF or image", type=["pdf", *(s.lstrip(".") for s in sorted(IMAGE_SUFFIXES))]
+    )
     name, data = (upload.name, upload.getvalue()) if upload else (None, None)
 
 if not data:
-    st.info("Choose a sample or upload a PDF.", icon=":material/upload_file:")
+    st.info("Choose a sample or upload a PDF or photo.", icon=":material/upload_file:")
     st.stop()
 
 
@@ -57,11 +63,24 @@ doc = result.document
 left, right = st.columns([1.4, 1], gap="large")
 
 with left:
+    ocr = result.text_source.startswith("ocr")
+    source_label = (
+        f"OCR · {result.text_source.removeprefix('ocr: ')}"
+        + (f" · {result.ocr_confidence:.0%} confidence" if result.ocr_confidence else "")
+        if ocr
+        else "PDF text layer"
+    )
     st.markdown(
         f"**{doc.doc_type.value.replace('_', ' ').title()}** · extracted by "
         f"{'LLM' if result.method == 'llm' else 'rule-based parser'} · "
-        f"{result.text_chars:,} characters"
+        f"{result.text_chars:,} characters &nbsp;" + pill(source_label, "warn" if ocr else "info"),
+        unsafe_allow_html=True,
     )
+    for warning in result.warnings:
+        st.warning(warning, icon=":material/document_scanner:")
+    if ocr:
+        with st.expander("Raw OCR text"):
+            st.code(result.raw_text, language=None, wrap_lines=True)
     labels = {
         "hs_code": "HS code",
         "gross_weight_kg": "Gross weight (kg)",
