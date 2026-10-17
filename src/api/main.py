@@ -83,6 +83,14 @@ def bootstrap() -> None:
         get_volume_repository()
         get_document_store()
         get_delivery_log()
+        from src.auth.users import get_user_store  # noqa: PLC0415
+        from src.bi.export import refresh as refresh_bi  # noqa: PLC0415
+
+        get_user_store()  # creates app_users and the admin account (if configured)
+        try:
+            refresh_bi()  # Power BI feed (bi_ tables)
+        except Exception:
+            logger.exception("Power BI feed refresh failed; the app continues without it.")
 
 
 @asynccontextmanager
