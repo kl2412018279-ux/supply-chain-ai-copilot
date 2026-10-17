@@ -91,7 +91,7 @@ with st.sidebar:
         roles = [r for _, r, _ in DEMO_ACCOUNTS]
         picked = st.segmented_control(
             "View as", roles, default=user.role, format_func=lambda r: r.value.capitalize(),
-            key="view_as", width="stretch",
+            width="stretch",
             help="See the platform the way each role does. Pages differ by role.",
         )  # fmt: skip
         if picked and picked is not user.role:
