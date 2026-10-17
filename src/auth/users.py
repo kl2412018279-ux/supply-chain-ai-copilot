@@ -1,17 +1,15 @@
-"""User accounts, password hashing and roles for the dashboard login.
+"""Roles, the public demo views and the admin sign-in.
 
-Passwords are stored only as bcrypt hashes. Two kinds of account exist:
+Visitors land straight in the platform as a **demo user** and can switch between the
+demo roles (manager / ops / sales) to see each role's pages. Demo users cannot change
+shared data: their uploads stay in their own browser session and they cannot send
+Telegram alerts.
 
-* **Demo accounts** (on by default, ``DEMO_ACCOUNTS=false`` to switch off): one per
-  role, with a password shown on the login page so recruiters and interviewers can
-  look around. Demo users cannot change shared data: their uploads stay in their own
-  browser session and they cannot send Telegram alerts.
-* **Admin account** (only when ``ADMIN_PASSWORD`` is set, e.g. in Streamlit secrets):
-  full access, including saving uploads for everyone and sending alerts. Its
-  password is never shown and the hash is refreshed from the secret on every start,
-  so changing the secret changes the password.
-
-Accounts live in PostgreSQL (``app_users``) when ``DATABASE_URL`` is set, else in memory.
+The **admin** account exists only when ``ADMIN_PASSWORD`` is set (e.g. in Streamlit
+secrets). Signing in as admin (sidebar) allows saving uploads for everyone and sending
+alerts. The password is stored only as a bcrypt hash, refreshed from the secret on every
+start, so changing the secret changes the password. Accounts live in PostgreSQL
+(``app_users``) when ``DATABASE_URL`` is set, else in memory.
 """
 
 from __future__ import annotations
@@ -76,12 +74,12 @@ ROLE_PAGES: dict[Role, set[str]] = {
     },  # fmt: skip
 }
 
-DEMO_PASSWORD = "muara-demo"
 DEMO_ACCOUNTS = [
     ("manager", Role.manager, "Aisyah (Ops Manager)"),
     ("ops", Role.ops, "Ravi (Ops Executive)"),
     ("sales", Role.sales, "Mei Ling (Sales Executive)"),
 ]
+
 
 MAX_ATTEMPTS = 5
 LOCKOUT_SECONDS = 60
@@ -105,6 +103,15 @@ class User:
     def can_change_shared_data(self) -> bool:
         """Save uploads for everyone, send alerts. Never for public demo accounts."""
         return not self.demo and self.role in {Role.admin, Role.manager, Role.ops}
+
+
+def demo_user(role: Role | str = Role.manager) -> User:
+    """The public demo user for a role (no password; read-only for shared data)."""
+    role = Role(role)
+    for username, r, name in DEMO_ACCOUNTS:
+        if r is role:
+            return User(username, r, name, demo=True)
+    raise ValueError(f"No demo account for role {role.value}")
 
 
 def hash_password(password: str) -> str:
@@ -197,23 +204,17 @@ class PostgresUserStore:
 
 
 def seed_accounts(store: UserStore) -> None:
-    """Create / refresh the demo accounts and the admin account from settings."""
+    """Create / refresh the admin account from settings (only when a password is set)."""
     settings = get_settings()
-    for username, role, name in DEMO_ACCOUNTS:
-        if settings.demo_accounts:
-            existing = store.get(username)
-            if existing is None or not check_password(DEMO_PASSWORD, existing[1]):
-                store.upsert(User(username, role, name, demo=True), hash_password(DEMO_PASSWORD))
-        else:
-            store.delete(username)
-    if settings.admin_password:
-        admin = settings.admin_username
-        existing = store.get(admin)
-        if existing is None or not check_password(settings.admin_password, existing[1]):
-            store.upsert(
-                User(admin, Role.admin, "Administrator", demo=False),
-                hash_password(settings.admin_password),
-            )
+    if not settings.admin_password:
+        return
+    admin = settings.admin_username
+    existing = store.get(admin)
+    if existing is None or not check_password(settings.admin_password, existing[1]):
+        store.upsert(
+            User(admin, Role.admin, "Administrator", demo=False),
+            hash_password(settings.admin_password),
+        )
 
 
 @lru_cache

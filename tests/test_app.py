@@ -129,25 +129,18 @@ def test_delay_page_shows_and_overrides_rain(app):
     assert any("entered by user" in c.value for c in app.caption)
 
 
-def test_login_required_and_demo_sign_in(trained_model, ingested_store, delay_model):
+def test_opens_without_login_and_switches_role(trained_model, ingested_store, delay_model):
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert not any(m.label == "Past free time" for m in at.metric)  # nothing before login
-    assert any("muara-demo" in m.value for m in at.markdown)  # demo credentials shown
+    assert at.session_state["user"]["role"] == "manager"  # straight in, as the demo manager
+    assert any(m.label == "Past free time" for m in at.metric)
 
-    at.text_input(key="login_username").set_value("sales")
-    at.text_input(key="login_password").set_value("wrong")
-    at.button[0].click().run()
-    assert any("Wrong username or password" in e.value for e in at.error)
-
-    at.text_input(key="login_username").set_value("sales")
-    at.text_input(key="login_password").set_value("muara-demo")
-    at.button[0].click().run()
+    view_as = next(b for b in at.button_group if b.label == "View as")
+    view_as.set_value(view_as.options[2]).run()  # Sales
     assert not at.exception
-    assert at.session_state["user"]["role"] == "sales"
-    assert any(m.label == "Past free time" for m in at.metric)  # landed on the control tower
+    assert at.session_state["user"]["role"] == "sales" and at.session_state["user"]["demo"]
 
 
 def test_role_limits_pages(app):
