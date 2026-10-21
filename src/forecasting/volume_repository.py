@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS container_volumes (
     teu       NUMERIC NOT NULL CHECK (teu >= 0),
     PRIMARY KEY (commodity, date)
 );
+ALTER TABLE container_volumes ENABLE ROW LEVEL SECURITY;
 """
 
 

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS shipping_documents (
     saved_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (doc_type, document_number)
 );
+ALTER TABLE shipping_documents ENABLE ROW LEVEL SECURITY;
 """
 
 
