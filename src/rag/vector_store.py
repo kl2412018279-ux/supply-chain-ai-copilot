@@ -120,6 +120,7 @@ CREATE INDEX IF NOT EXISTS document_chunks_embedding_idx
     ON document_chunks USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS document_chunks_tsv_idx
     ON document_chunks USING gin (content_tsv);
+ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
 """
 
 

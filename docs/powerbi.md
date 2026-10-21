@@ -30,19 +30,13 @@ python -m src.bi.export --csv powerbi_data/   # or CSV files, no database needed
 ## 2. Give Power BI a read-only login (recommended)
 
 Don't put your main database password into Power BI. In Supabase, open **SQL Editor**,
-paste this, change the password, and press **Run**:
+paste the contents of `docs/powerbi/readonly_role.sql`, change the password, and press
+**Run**. It creates a `powerbi_reader` login that can only read the seven `bi_` tables.
 
-```sql
--- docs/powerbi/readonly_role.sql
-CREATE ROLE powerbi_reader WITH LOGIN PASSWORD 'change-me-to-a-long-password';
-GRANT USAGE ON SCHEMA public TO powerbi_reader;
-GRANT SELECT ON bi_jobs, bi_free_time, bi_deliveries, bi_volumes,
-                bi_carriers, bi_destinations, bi_refresh TO powerbi_reader;
-```
-
-Because the feed drops and recreates its tables, run the `GRANT SELECT` line again if
-Power BI later says "permission denied". (The file `docs/powerbi/readonly_role.sql`
-includes a default-privileges line that makes this automatic.)
+The `bi_` tables have Row Level Security turned on, so Supabase's public API keys
+cannot read them; the script adds a read policy for `powerbi_reader` only. The app
+rebuilds the tables on every start and adds the grant and policy back itself, so you
+run the script once.
 
 ## 3. Connect Power BI Desktop
 

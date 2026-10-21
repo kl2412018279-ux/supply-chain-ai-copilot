@@ -27,3 +27,8 @@ CREATE INDEX IF NOT EXISTS document_chunks_embedding_idx
     ON document_chunks USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS document_chunks_tsv_idx
     ON document_chunks USING gin (content_tsv);
+
+-- No access through Supabase's public API (anon / authenticated keys); the app
+-- connects as the table owner, which RLS does not restrict.
+ALTER TABLE container_volumes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;

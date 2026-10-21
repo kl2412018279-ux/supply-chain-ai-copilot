@@ -161,7 +161,8 @@ CREATE TABLE IF NOT EXISTS app_users (
     demo          BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_login_at TIMESTAMPTZ
-)
+);
+ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
 """
 
 

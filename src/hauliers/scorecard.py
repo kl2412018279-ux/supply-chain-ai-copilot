@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS haulier_deliveries (
     damaged     INTEGER NOT NULL,
     claim_rm    REAL    NOT NULL
 );
+ALTER TABLE haulier_deliveries ENABLE ROW LEVEL SECURITY;
 """
 
 

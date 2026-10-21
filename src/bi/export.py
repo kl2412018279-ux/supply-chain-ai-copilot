@@ -139,9 +139,19 @@ def _clean(value):
     return value
 
 
+BI_READER = "powerbi_reader"  # optional read-only login, see docs/powerbi/readonly_role.sql
+
+
 def write_postgres(tables: dict[str, pd.DataFrame], dsn: str) -> None:
-    """Replace each ``bi_`` table in one transaction per table."""
+    """Replace each ``bi_`` table in one transaction per table.
+
+    Row Level Security is on, so Supabase's public API (anon / authenticated keys)
+    cannot read the tables; the Power BI reader login, if it exists, gets a read policy.
+    """
     conn = PgConnection(dsn)
+    has_reader = bool(
+        conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (BI_READER,)).fetchone()
+    )
     for name, df in tables.items():
         cols = ", ".join(f'"{c}" {_pg_type(df[c])}' for c in df.columns)
         placeholders = ", ".join(["%s"] * len(df.columns))
@@ -149,6 +159,12 @@ def write_postgres(tables: dict[str, pd.DataFrame], dsn: str) -> None:
         with conn.raw.transaction(), conn.raw.cursor() as cur:
             cur.execute(f'DROP TABLE IF EXISTS "{name}"')
             cur.execute(f'CREATE TABLE "{name}" ({cols})')
+            cur.execute(f'ALTER TABLE "{name}" ENABLE ROW LEVEL SECURITY')
+            if has_reader:
+                cur.execute(f'GRANT SELECT ON "{name}" TO {BI_READER}')
+                cur.execute(
+                    f'CREATE POLICY bi_read ON "{name}" FOR SELECT TO {BI_READER} USING (true)'
+                )
             if rows:
                 cur.executemany(f'INSERT INTO "{name}" VALUES ({placeholders})', rows)
     conn.close()
